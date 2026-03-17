@@ -1,8 +1,13 @@
 import axios from "axios";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+if (!API_BASE) {
+  throw new Error("NEXT_PUBLIC_API_URL is not defined");
+}
+
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api",
-  timeout: 30_000,
+  baseURL: API_BASE,
+  timeout: 200000,
 });
 
 export interface Video {
@@ -40,8 +45,7 @@ export const videoApi = {
 
   remove: (id: string) => api.delete(`/videos/${id}`),
 
-  getPlaylistUrl: (videoId: string) =>
-    `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"}/stream/${videoId}/playlist`,
+  getPlaylistUrl: (videoId: string) => `${API_BASE}/stream/${videoId}/playlist`,
 };
 
 export default api;
