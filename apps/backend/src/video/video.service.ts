@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -54,6 +48,7 @@ export class VideoService {
       title: dto.title,
       description: dto.description ?? null,
       rawDriveFileId: dto.rawDriveFileId,
+      category: (dto.category ?? null) as string | null,
       status: VideoStatus.PROCESSING,
     });
 
@@ -61,7 +56,10 @@ export class VideoService {
 
     await this.transcodeQueue.add(
       'transcode',
-      { videoId: saved.id, rawDriveFileId: saved.rawDriveFileId! },
+      {
+        videoId: saved.id,
+        rawDriveFileId: saved.rawDriveFileId ?? '',
+      },
       { attempts: 3, backoff: { type: 'exponential', delay: 5000 } },
     );
 
@@ -69,14 +67,17 @@ export class VideoService {
     return saved;
   }
 
-  async findAll(): Promise<Video[]> {
+  async findAll(category?: string): Promise<Video[]> {
     return this.videoRepo.find({
+      where: category ? { category } : {},
       order: { createdAt: 'DESC' },
       select: [
         'id',
         'title',
         'description',
         'status',
+        'category',
+        'durationSeconds',
         'createdAt',
         'updatedAt',
       ],
@@ -95,7 +96,10 @@ export class VideoService {
     extra?: Partial<
       Pick<
         Video,
-        'playlistDriveFileId' | 'hlsFolderDriveId' | 'durationSeconds'
+        | 'hlsFolderDriveId'
+        | 'durationSeconds'
+        | 'thumbnailDriveFileId'
+        | 'sourceHeight'
       >
     >,
   ): Promise<void> {
@@ -112,30 +116,31 @@ export class VideoService {
     await this.chunkRepo.save(entities);
   }
 
-  async findChunkByFilename(
+  async getVideoQualities(videoId: string): Promise<string[]> {
+    const rows = await this.chunkRepo
+      .createQueryBuilder('c')
+      .select('DISTINCT c.quality', 'quality')
+      .where('c.videoId = :videoId AND c.quality IS NOT NULL', { videoId })
+      .getRawMany<{ quality: string }>();
+    // Sort descending by numeric value (1080 > 480 > 320)
+    return rows.map((r) => r.quality).sort((a, b) => parseInt(b) - parseInt(a));
+  }
+
+  async getChunksByQuality(
     videoId: string,
-    filename: string,
-  ): Promise<VideoChunk> {
-    const chunk = await this.chunkRepo.findOne({
-      where: { videoId, filename },
+    quality: string,
+  ): Promise<VideoChunk[]> {
+    return this.chunkRepo.find({
+      where: { videoId, quality },
+      order: { sequence: 'ASC' },
     });
-    if (!chunk) {
-      throw new BadRequestException(
-        `Chunk "${filename}" not found for video ${videoId}`,
-      );
-    }
-    return chunk;
   }
 
   async remove(id: string): Promise<void> {
     const video = await this.videoRepo.findOne({ where: { id } });
     if (!video) throw new NotFoundException(`Video ${id} not found`);
 
-    // Delete the per-video Drive folder — this removes all files inside
-    // (raw source, playlist.m3u8, and every segment .ts) in one API call.
-    // Fall back to deleting individual known files if the folder ID is absent
-    // (videos processed before this column was added).
-    const folderId = video.hlsFolderDriveId as string | null;
+    const folderId = video.hlsFolderDriveId;
     if (folderId !== null) {
       try {
         await this.storage.deleteFile(folderId);
@@ -143,23 +148,6 @@ export class VideoService {
       } catch (err) {
         this.logger.warn(
           `Failed to delete Drive folder ${folderId}: ${(err as Error).message}`,
-        );
-      }
-    } else {
-      // Legacy path: delete individual files (videos before folder grouping)
-      const fileIds: string[] = [];
-      if (video.rawDriveFileId) fileIds.push(video.rawDriveFileId);
-      if (video.playlistDriveFileId) fileIds.push(video.playlistDriveFileId);
-      const chunks = await this.chunkRepo.find({ where: { videoId: id } });
-      fileIds.push(...chunks.map((c) => c.driveFileId));
-
-      const results = await Promise.allSettled(
-        fileIds.map((fileId) => this.storage.deleteFile(fileId)),
-      );
-      const failed = results.filter((r) => r.status === 'rejected').length;
-      if (failed > 0) {
-        this.logger.warn(
-          `${failed}/${fileIds.length} Drive file deletions failed for video ${id}`,
         );
       }
     }

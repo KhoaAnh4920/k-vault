@@ -12,6 +12,10 @@ export class CreateVideoDto {
   @IsString()
   @IsNotEmpty()
   rawDriveFileId: string;
+
+  @IsString()
+  @IsOptional()
+  category?: string;
 }
 
 export class InitUploadDto {

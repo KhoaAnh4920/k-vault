@@ -93,71 +93,95 @@ export async function createFolder(
   return res.data.id;
 }
 
-/** Upload all .ts segments and the .m3u8 from a directory into a per-video subfolder.
- *  Also moves the raw source file into the same subfolder. */
+/** Upload all HLS segments for each quality into a single flat Drive folder,
+ *  moves the raw source file in, and uploads the thumbnail if provided.
+ *
+ *  Segment filenames in Drive: `{quality}_segment000.ts`
+ *  Quality playlists are NOT uploaded — they are built dynamically by the backend.
+ */
 export async function uploadHlsDirectory(
-  hlsDir: string,
+  hlsBaseDir: string,
   videoId: string,
   rawDriveFileId: string,
+  thumbnailLocalPath: string | null,
+  qualities: Array<{ name: string }>,
   parentFolderId?: string,
 ): Promise<{
-  playlistFileId: string;
   videoFolderId: string;
-  chunks: Array<{ filename: string; driveFileId: string; sequence: number }>;
+  thumbnailFileId: string | null;
+  chunks: Array<{
+    filename: string;
+    driveFileId: string;
+    sequence: number;
+    quality: string;
+  }>;
 }> {
-  const files = fs.readdirSync(hlsDir).sort();
-  const tsFiles = files
-    .filter((f) => f.endsWith(".ts"))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  const m3u8File = files.find((f) => f.endsWith(".m3u8"));
-
-  if (!m3u8File) throw new Error("No .m3u8 file found in HLS directory");
-
-  // Create a dedicated subfolder for this video's HLS files
+  // Create a dedicated subfolder for this video
   const videoFolderId = await createFolder(videoId, parentFolderId);
   console.log(
     `  📁 Created Drive folder for video ${videoId}: ${videoFolderId}`,
   );
 
-  // Move the raw source file into the same subfolder
+  // Move the raw source file into the video folder
   await moveFile(rawDriveFileId, videoFolderId);
   console.log(`  📦 Moved raw file ${rawDriveFileId} into video folder`);
 
-  const chunks: Array<{
+  const allChunks: Array<{
     filename: string;
     driveFileId: string;
     sequence: number;
+    quality: string;
   }> = [];
 
-  // Upload .ts segments in parallel batches of 5
-  const batchSize = 5;
-  for (let i = 0; i < tsFiles.length; i += batchSize) {
-    const batch = tsFiles.slice(i, i + batchSize);
-    const results = await Promise.all(
-      batch.map(async (filename, idx) => {
-        const fileId = await uploadFile(
-          path.join(hlsDir, filename),
-          filename,
-          "video/MP2T",
-          videoFolderId,
-        );
-        console.log(
-          `  ✓ Uploaded segment ${i + idx + 1}/${tsFiles.length}: ${filename}`,
-        );
-        return { filename, driveFileId: fileId, sequence: i + idx };
-      }),
+  for (const quality of qualities) {
+    const qualityDir = path.join(hlsBaseDir, quality.name);
+    const tsFiles = fs
+      .readdirSync(qualityDir)
+      .filter((f) => f.endsWith(".ts"))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+    console.log(
+      `  ☁️  Uploading ${tsFiles.length} segments for ${quality.name}...`,
     );
-    chunks.push(...results);
+
+    const batchSize = 5;
+    for (let i = 0; i < tsFiles.length; i += batchSize) {
+      const batch = tsFiles.slice(i, i + batchSize);
+      const results = await Promise.all(
+        batch.map(async (originalFilename, idx) => {
+          // Prefix with quality name so all qualities can coexist in the same folder
+          const driveName = `${quality.name}_${originalFilename}`;
+          const fileId = await uploadFile(
+            path.join(qualityDir, originalFilename),
+            driveName,
+            "video/MP2T",
+            videoFolderId,
+          );
+          const sequence = i + idx;
+          console.log(`    ✓ ${driveName} (${sequence + 1}/${tsFiles.length})`);
+          return {
+            filename: driveName,
+            driveFileId: fileId,
+            sequence,
+            quality: quality.name,
+          };
+        }),
+      );
+      allChunks.push(...results);
+    }
   }
 
-  // Upload playlist last (after all chunks are uploaded)
-  const playlistFileId = await uploadFile(
-    path.join(hlsDir, m3u8File),
-    m3u8File,
-    "application/vnd.apple.mpegurl",
-    videoFolderId,
-  );
-  console.log(`  ✓ Uploaded playlist: ${m3u8File} → ${playlistFileId}`);
+  // Upload thumbnail if available
+  let thumbnailFileId: string | null = null;
+  if (thumbnailLocalPath && fs.existsSync(thumbnailLocalPath)) {
+    thumbnailFileId = await uploadFile(
+      thumbnailLocalPath,
+      "thumbnail.jpg",
+      "image/jpeg",
+      videoFolderId,
+    );
+    console.log(`  🖼  Uploaded thumbnail → ${thumbnailFileId}`);
+  }
 
-  return { playlistFileId, videoFolderId, chunks };
+  return { videoFolderId, thumbnailFileId, chunks: allChunks };
 }

@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
 } from '@nestjs/common';
 import { VideoService } from './video.service';
 import { CreateVideoDto, InitUploadDto } from './dto/video.dto';
@@ -30,8 +31,8 @@ export class VideoController {
   }
 
   @Get()
-  findAll() {
-    return this.videoService.findAll();
+  findAll(@Query('category') category?: string) {
+    return this.videoService.findAll(category);
   }
 
   @Get(':id')

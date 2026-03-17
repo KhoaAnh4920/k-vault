@@ -5,6 +5,16 @@ import { videoApi, type Video } from "@/lib/api";
 
 const POLL_INTERVAL = 5000;
 
+const CATEGORY_LABELS: Record<string, string> = {
+  entertainment: "Entertainment",
+  education: "Education",
+  music: "Music",
+  gaming: "Gaming",
+  sports: "Sports",
+  tech: "Tech",
+  other: "Other",
+};
+
 function StatusBadge({ status }: { status: Video["status"] }) {
   const map: Record<
     Video["status"],
@@ -20,6 +30,16 @@ function StatusBadge({ status }: { status: Video["status"] }) {
       {dot} {label}
     </span>
   );
+}
+
+function formatDuration(secs: number | null): string | null {
+  if (!secs) return null;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  if (h > 0)
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 function VideoCard({
@@ -50,6 +70,8 @@ function VideoCard({
     }
   };
 
+  const duration = formatDuration(video.durationSeconds);
+
   return (
     <a
       href={video.status === "ready" ? `/watch/${video.id}` : "#"}
@@ -65,7 +87,7 @@ function VideoCard({
           transition: "opacity 0.2s",
         }}
       >
-        {/* Thumbnail placeholder */}
+        {/* Thumbnail */}
         <div
           style={{
             aspectRatio: "16/9",
@@ -74,21 +96,44 @@ function VideoCard({
             alignItems: "center",
             justifyContent: "center",
             position: "relative",
+            overflow: "hidden",
           }}
         >
+          {/* Thumbnail image — hidden on error (video still processing or no thumbnail) */}
+          {video.status === "ready" && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={videoApi.getThumbnailUrl(video.id)}
+              alt=""
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+              }}
+            />
+          )}
+
+          {/* Overlay icon */}
           {video.status === "ready" ? (
             <div
               style={{
                 width: 52,
                 height: 52,
                 borderRadius: "50%",
-                background: "var(--accent)",
+                background: "rgba(0,0,0,0.55)",
+                backdropFilter: "blur(4px)",
+                border: "2px solid rgba(255,255,255,0.25)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: 20,
-                color: "#0a0a0f",
-                boxShadow: "0 0 32px rgba(245,158,11,0.4)",
+                color: "#fff",
+                position: "relative",
               }}
             >
               ▶
@@ -97,6 +142,26 @@ function VideoCard({
             <div className="spinner" />
           ) : (
             <span style={{ fontSize: 28 }}>⚠</span>
+          )}
+
+          {/* Duration badge */}
+          {duration && (
+            <span
+              style={{
+                position: "absolute",
+                bottom: 8,
+                right: 8,
+                background: "rgba(0,0,0,0.75)",
+                color: "#fff",
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "2px 6px",
+                borderRadius: 4,
+                letterSpacing: "0.02em",
+              }}
+            >
+              {duration}
+            </span>
           )}
 
           {/* Delete button — top-right corner of thumbnail */}
@@ -136,26 +201,23 @@ function VideoCard({
 
         {/* Info */}
         <div style={{ padding: "16px" }}>
-          <div
+          <h3
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-              gap: 8,
-              marginBottom: 8,
+              margin: "0 0 8px",
+              fontSize: 15,
+              fontWeight: 600,
+              color: "var(--text-primary)",
+              lineHeight: 1.4,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              minHeight: "2.8em",
             }}
           >
-            <h3
-              style={{
-                margin: 0,
-                fontSize: 15,
-                fontWeight: 600,
-                color: "var(--text-primary)",
-                lineHeight: 1.3,
-              }}
-            >
-              {video.title}
-            </h3>
+            {video.title}
+          </h3>
+          <div style={{ marginBottom: 8 }}>
             <StatusBadge status={video.status} />
           </div>
           <p
@@ -202,10 +264,18 @@ export default function HomePage() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | undefined>(
+    undefined,
+  );
 
-  const fetchVideos = async () => {
+  // Collect all categories present in the loaded video list
+  const availableCategories = Array.from(
+    new Set(videos.map((v) => v.category).filter(Boolean)),
+  ) as string[];
+
+  const fetchVideos = async (category?: string) => {
     try {
-      const data = await videoApi.list();
+      const data = await videoApi.list(category);
       setVideos(data);
       setError(null);
     } catch {
@@ -219,11 +289,21 @@ export default function HomePage() {
     setVideos((prev) => prev.filter((v) => v.id !== id));
   };
 
+  const handleCategoryChange = (cat: string | undefined) => {
+    setActiveCategory(cat);
+    setLoading(true);
+    void fetchVideos(cat);
+  };
+
   useEffect(() => {
     void fetchVideos();
     // Poll every 5s so processing status updates automatically
-    const interval = setInterval(() => void fetchVideos(), POLL_INTERVAL);
+    const interval = setInterval(
+      () => void fetchVideos(activeCategory),
+      POLL_INTERVAL,
+    );
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const hasProcessing = videos.some((v) => v.status === "processing");
@@ -234,7 +314,7 @@ export default function HomePage() {
       style={{ paddingTop: 48, paddingBottom: 80 }}
     >
       {/* Hero */}
-      <div style={{ marginBottom: 48 }}>
+      <div style={{ marginBottom: 32 }}>
         <h1
           style={{
             fontSize: "clamp(28px, 4vw, 48px)",
@@ -252,6 +332,56 @@ export default function HomePage() {
             : `${videos.length} video${videos.length !== 1 ? "s" : ""}${hasProcessing ? " · Transcoding in progress..." : ""}`}
         </p>
       </div>
+
+      {/* Category filter chips */}
+      {(availableCategories.length > 0 || activeCategory) && (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            marginBottom: 32,
+          }}
+        >
+          <button
+            onClick={() => handleCategoryChange(undefined)}
+            style={{
+              padding: "6px 14px",
+              borderRadius: 20,
+              border: "1px solid var(--border)",
+              background: !activeCategory ? "var(--accent)" : "var(--bg-card)",
+              color: !activeCategory ? "#0a0a0f" : "var(--text-secondary)",
+              fontWeight: !activeCategory ? 600 : 400,
+              fontSize: 13,
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            All
+          </button>
+          {availableCategories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => handleCategoryChange(cat)}
+              style={{
+                padding: "6px 14px",
+                borderRadius: 20,
+                border: "1px solid var(--border)",
+                background:
+                  activeCategory === cat ? "var(--accent)" : "var(--bg-card)",
+                color:
+                  activeCategory === cat ? "#0a0a0f" : "var(--text-secondary)",
+                fontWeight: activeCategory === cat ? 600 : 400,
+                fontSize: 13,
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              {CATEGORY_LABELS[cat] ?? cat}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Error */}
       {error && (

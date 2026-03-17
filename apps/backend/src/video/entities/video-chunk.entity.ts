@@ -29,4 +29,8 @@ export class VideoChunk {
   /** Order of the chunk in the playlist (0-based) */
   @Column({ type: 'int' })
   sequence: number;
+
+  /** Quality level: '1080p', '480p', '320p' */
+  @Column({ type: 'varchar', length: 10, nullable: true, name: 'quality' })
+  quality: string | null;
 }

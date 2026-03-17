@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@repo/ui": "workspace:*",
+    "@vidstack/react": "^1.12.13",
     "axios": "^1.13.6",
     "hls.js": "^1.6.15",
     "next": "16.1.5",

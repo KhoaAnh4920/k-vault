@@ -30,11 +30,17 @@ export class Video {
   @Column({ type: 'varchar', nullable: true, name: 'raw_drive_file_id' })
   rawDriveFileId: string | null;
 
-  @Column({ type: 'varchar', nullable: true, name: 'playlist_drive_file_id' })
-  playlistDriveFileId: string | null;
-
   @Column({ type: 'varchar', nullable: true, name: 'hls_folder_drive_id' })
   hlsFolderDriveId: string | null;
+
+  @Column({ type: 'varchar', nullable: true, name: 'thumbnail_drive_file_id' })
+  thumbnailDriveFileId: string | null;
+
+  @Column({ type: 'varchar', nullable: true, name: 'category' })
+  category: string | null;
+
+  @Column({ type: 'int', nullable: true, name: 'source_height' })
+  sourceHeight: number | null;
 
   @Column({ type: 'bigint', nullable: true, name: 'duration_seconds' })
   durationSeconds: number | null;
