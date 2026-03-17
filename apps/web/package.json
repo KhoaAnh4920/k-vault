@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@repo/ui": "workspace:*",
+    "axios": "^1.13.6",
+    "hls.js": "^1.6.15",
     "next": "16.1.5",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
@@ -19,10 +21,13 @@
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "@tailwindcss/vite": "^4.2.1",
+    "@types/hls.js": "^1.0.0",
     "@types/node": "^22.15.3",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "eslint": "^9.39.1",
+    "tailwindcss": "^4.0.0",
     "typescript": "5.9.2"
   }
 }
