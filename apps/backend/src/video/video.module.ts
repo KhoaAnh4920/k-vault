@@ -3,6 +3,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { VideoController } from './video.controller';
 import { VideoService } from './video.service';
+import { VideoQueryService } from './video.query.service';
+import { VideoCommandService } from './video.command.service';
+import { VideoEventListener } from './video.event-listener';
 import { Video } from './entities/video.entity';
 import { VideoChunk } from './entities/video-chunk.entity';
 import { StorageModule } from '../storage/storage.module';
@@ -23,7 +26,12 @@ import {
     StorageModule,
   ],
   controllers: [VideoController],
-  providers: [VideoService],
+  providers: [
+    VideoService,
+    VideoQueryService,
+    VideoCommandService,
+    VideoEventListener,
+  ],
   exports: [VideoService],
 })
 export class VideoModule {}

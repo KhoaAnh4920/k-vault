@@ -111,7 +111,10 @@ export default function AuthHeader() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer"
-                    onSelect={() => signOut({ callbackUrl: "/" })}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      signOut({ callbackUrl: "/" });
+                    }}
                   >
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Logout</span>

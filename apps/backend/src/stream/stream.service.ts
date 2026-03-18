@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Readable } from 'stream';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { IStorageService } from '../storage/storage.interface';
 import { STORAGE_SERVICE } from '../storage/storage.interface';
 import { VideoService } from '../video/video.service';
@@ -28,6 +29,7 @@ export class StreamService {
     @Inject(STORAGE_SERVICE)
     private readonly storage: IStorageService,
     private readonly videoService: VideoService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /** Returns the master HLS playlist for a video. */
@@ -39,6 +41,10 @@ export class StreamService {
         `Video ${videoId} is not ready for streaming`,
       );
     }
+
+    // Emit an event that the video is being viewed.
+    // This allows decoupled view count incrementing.
+    this.eventEmitter.emit('video.viewed', { videoId });
 
     return this.buildMasterPlaylist(videoId);
   }

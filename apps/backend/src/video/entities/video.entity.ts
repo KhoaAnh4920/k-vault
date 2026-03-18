@@ -45,6 +45,9 @@ export class Video {
   @Column({ type: 'bigint', nullable: true, name: 'duration_seconds' })
   durationSeconds: number | null;
 
+  @Column({ type: 'int', default: 0 })
+  views: number;
+
   /** Auth0 `sub` claim of the user who uploaded the video. */
   @Column({ type: 'varchar', nullable: true, name: 'owner_id' })
   ownerId: string | null;

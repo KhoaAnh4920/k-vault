@@ -9,6 +9,7 @@ import { VideoModule } from './video/video.module';
 import { StreamModule } from './stream/stream.module';
 import { Video } from './video/entities/video.entity';
 import { VideoChunk } from './video/entities/video-chunk.entity';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 @Module({
   imports: [
@@ -43,6 +44,9 @@ import { VideoChunk } from './video/entities/video-chunk.entity';
       },
       inject: [ConfigService],
     }),
+
+    // Events
+    EventEmitterModule.forRoot(),
 
     // Feature Modules
     AuthModule,
