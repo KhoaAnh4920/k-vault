@@ -38,6 +38,7 @@ export class VideoService {
     private readonly storage: IStorageService,
 
     @InjectQueue(TRANSCODE_QUEUE)
+    // Queue name is resolved from NODE_ENV — see queue.constants.ts
     private readonly transcodeQueue: Queue<TranscodeJobData>,
   ) {}
 

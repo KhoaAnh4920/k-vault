@@ -35,7 +35,7 @@ export class GoogleDriveAdapter implements IStorageService {
     parentFolderId?: string,
   ): Promise<ResumableUploadConfig> {
     const folderId =
-      parentFolderId ?? this.config.get<string>('GOOGLE_DRIVE_FOLDER_ID');
+      parentFolderId ?? this.config.get<string>('DRIVE_FOLDER_ID');
 
     // Pre-allocate a file ID so we can reference it before the upload completes
     const idRes = await this.drive.files.generateIds({
@@ -96,8 +96,7 @@ export class GoogleDriveAdapter implements IStorageService {
     options: UploadFileOptions,
   ): Promise<string> {
     const folderId =
-      options.parentFolderId ??
-      this.config.get<string>('GOOGLE_DRIVE_FOLDER_ID');
+      options.parentFolderId ?? this.config.get<string>('DRIVE_FOLDER_ID');
 
     const res = await this.drive.files.create({
       requestBody: {

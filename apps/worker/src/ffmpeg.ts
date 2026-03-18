@@ -16,7 +16,7 @@ export interface QualityPreset {
 export const ALL_QUALITY_PRESETS: QualityPreset[] = [
   { name: "1080p", height: 1080, videoBitrate: "5000k", audioBitrate: "192k" },
   { name: "480p", height: 480, videoBitrate: "2000k", audioBitrate: "128k" },
-  { name: "320p", height: 320, videoBitrate: "800k", audioBitrate: "96k" },
+  // { name: "320p", height: 320, videoBitrate: "800k", audioBitrate: "96k" },
 ];
 
 export interface VideoInfo {

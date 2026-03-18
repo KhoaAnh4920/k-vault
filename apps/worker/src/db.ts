@@ -1,10 +1,12 @@
 import { Pool } from "pg";
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-  max: 5,
-});
+export function createPool(connectionString: string): Pool {
+  return new Pool({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+    max: 5,
+  });
+}
 
 export interface VideoChunkRow {
   filename: string;
@@ -14,6 +16,7 @@ export interface VideoChunkRow {
 }
 
 export async function updateVideoStatus(
+  pool: Pool,
   videoId: string,
   status: "processing" | "ready" | "error",
   extra?: {
@@ -55,6 +58,7 @@ export async function updateVideoStatus(
 }
 
 export async function saveVideoChunks(
+  pool: Pool,
   videoId: string,
   chunks: Array<{
     filename: string;
@@ -76,8 +80,4 @@ export async function saveVideoChunks(
     `INSERT INTO video_chunks (video_id, filename, drive_file_id, sequence, quality) VALUES ${placeholders.join(", ")}`,
     values,
   );
-}
-
-export async function closeDb(): Promise<void> {
-  await pool.end();
 }
