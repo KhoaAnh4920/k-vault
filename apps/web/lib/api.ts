@@ -43,6 +43,7 @@ export interface Video {
   status: "processing" | "ready" | "error";
   category: string | null;
   durationSeconds: number | null;
+  views: number;
   createdAt: string;
   updatedAt: string;
 }

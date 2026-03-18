@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { MediaPlayer, MediaProvider, isHLSProvider } from "@vidstack/react";
+import { MediaPlayer, MediaProvider, isHLSProvider, MediaPlayerInstance } from "@vidstack/react";
 import {
   defaultLayoutIcons,
   DefaultVideoLayout,
@@ -15,33 +15,88 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, AlertTriangle, ArrowLeft } from "lucide-react";
 
+function DescriptionWithTimestamps({
+  text,
+  onSeek,
+}: {
+  text: string;
+  onSeek: (secs: number) => void;
+}) {
+  if (!text) return null;
+  const regex = /\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    const hours = match[1] ? parseInt(match[1], 10) : 0;
+    const minutes = parseInt(match[2] || "0", 10);
+    const seconds = parseInt(match[3] || "0", 10);
+    const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+    const timeStr = match[0];
+    parts.push(
+      <button
+        key={match.index}
+        onClick={() => onSeek(totalSeconds)}
+        className="text-primary hover:underline font-bold bg-primary/10 px-1 rounded mx-0.5 transition-colors"
+      >
+        {timeStr}
+      </button>
+    );
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  return (
+    <p className="mb-4 text-muted-foreground leading-relaxed whitespace-pre-wrap">
+      {parts}
+    </p>
+  );
+}
+
 export default function WatchPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { data: session } = useSession();
   const accessToken = session?.access_token ?? null;
+  
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [playerError, setPlayerError] = useState<string | null>(null);
+  const [startTime, setStartTime] = useState(0);
 
+  const playerRef = useRef<MediaPlayerInstance>(null);
+
+  // Fetch video data and read watch history
   useEffect(() => {
     videoApi
       .get(id)
-      .then(setVideo)
+      .then((v) => {
+        setVideo(v);
+        // Load history progress
+        try {
+          const history = JSON.parse(localStorage.getItem("k-vault-history") || "[]");
+          const found = history.find((h: any) => h.videoId === v.id);
+          // If video isn't finished (leave 5 seconds margin), resume from last position
+          if (found && v.durationSeconds && found.progress < v.durationSeconds - 5) {
+            setStartTime(found.progress);
+          }
+        } catch {
+          // Ignore
+        }
+      })
       .catch(() => router.push("/"))
       .finally(() => setLoading(false));
   }, [id, router]);
 
-  /**
-   * Configure hls.js to send the Bearer token with every request
-   * (master playlist, quality playlists, and all .ts segments).
-   */
+  // Provide Auth Token to HLS.js
   const handleProviderChange = useCallback(
     (
       provider: Parameters<
-        NonNullable<
-          React.ComponentProps<typeof MediaPlayer>["onProviderChange"]
-        >
+        NonNullable<React.ComponentProps<typeof MediaPlayer>["onProviderChange"]>
       >[0],
     ) => {
       if (isHLSProvider(provider) && accessToken) {
@@ -54,6 +109,38 @@ export default function WatchPage() {
     },
     [accessToken],
   );
+
+  // Track playback time safely (throttled locally, saved globally)
+  const handleTimeUpdate = useCallback((detail: { currentTime: number }) => {
+    if (!video) return;
+    try {
+      const historyStr = localStorage.getItem("k-vault-history") || "[]";
+      let history = JSON.parse(historyStr);
+      history = history.filter((h: any) => h.videoId !== video.id);
+      
+      // Save current progress
+      history.push({
+        videoId: video.id,
+        progress: detail.currentTime,
+        timestamp: Date.now()
+      });
+      
+      // Keep only last 100 watched videos
+      if (history.length > 100) history.shift();
+      
+      localStorage.setItem("k-vault-history", JSON.stringify(history));
+    } catch {
+      // Ignored
+    }
+  }, [video]);
+
+  // Jump to specific time (Timestamps click)
+  const handleSeek = (secs: number) => {
+    if (playerRef.current) {
+      playerRef.current.currentTime = secs;
+      playerRef.current.play();
+    }
+  };
 
   if (loading) {
     return (
@@ -83,12 +170,15 @@ export default function WatchPage() {
       {video.status === "ready" ? (
         <div className="mb-8 rounded-xl overflow-hidden shadow-2xl shadow-black/80 bg-black">
           <MediaPlayer
+            ref={playerRef}
             title={video.title}
             src={{
               src: videoApi.getPlaylistUrl(id),
               type: "application/x-mpegurl",
             }}
             poster={videoApi.getThumbnailUrl(id)}
+            currentTime={startTime}
+            onTimeUpdate={handleTimeUpdate}
             playsInline
             onProviderChange={handleProviderChange}
             onError={() =>
@@ -96,8 +186,11 @@ export default function WatchPage() {
             }
           >
             <MediaProvider />
+            {/* Vidstack DefaultLayout automatically converts to Mobile Layout on narrow screens
+                supporting Double Tap, Gestures, Swipes intuitively */}
             <DefaultVideoLayout icons={defaultLayoutIcons} />
           </MediaPlayer>
+          
           {playerError && (
             <div className="p-4 bg-destructive/10 border-t border-destructive/30 text-red-400 text-sm flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
@@ -133,19 +226,24 @@ export default function WatchPage() {
           {video.title}
         </h1>
         {video.description && (
-          <p className="mb-4 text-muted-foreground leading-relaxed whitespace-pre-wrap">
-            {video.description}
-          </p>
+          <DescriptionWithTimestamps
+            text={video.description}
+            onSeek={handleSeek}
+          />
         )}
-        <p className="m-0 text-sm text-muted-foreground">
-          Added{" "}
-          {new Date(video.createdAt).toLocaleDateString("en-US", {
-            weekday: "long",
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-          })}
-        </p>
+        <div className="flex items-center gap-2 m-0 text-sm text-muted-foreground font-medium">
+          <span>
+            {new Intl.NumberFormat("en-US", { notation: "compact" }).format(video.views)} views
+          </span>
+          <span>•</span>
+          <span>
+            {new Date(video.createdAt).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })}
+          </span>
+        </div>
       </div>
     </div>
   );

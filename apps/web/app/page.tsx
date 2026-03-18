@@ -3,11 +3,9 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { videoApi, type Video } from "@/lib/api";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Loader2, AlertCircle, Film } from "lucide-react";
+import { Film } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -23,139 +21,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: "Other",
 };
 
-function StatusBadge({ status }: { status: Video["status"] }) {
-  const map: Record<Video["status"], { variant: "secondary" | "default" | "destructive" | "outline", dot: string; label: string; cls: string }> = {
-    processing: { variant: "outline", dot: "⏳", label: "Processing", cls: "border-amber-500/50 bg-amber-500/10 text-amber-500" },
-    ready: { variant: "outline", dot: "●", label: "Ready", cls: "border-green-500/50 bg-green-500/10 text-green-500" },
-    error: { variant: "destructive", dot: "✕", label: "Error", cls: "" },
-  };
-  const { variant, dot, label, cls } = map[status];
-  return (
-    <Badge variant={variant} className={cn("gap-1.5 uppercase font-semibold text-[10px] tracking-wider", cls)}>
-      <span>{dot}</span> {label}
-    </Badge>
-  );
-}
-
-function formatDuration(secs: number | null): string | null {
-  if (!secs) return null;
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  const s = Math.floor(secs % 60);
-  if (h > 0)
-    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-function VideoCard({
-  video,
-  onDelete,
-  isAdmin,
-}: {
-  video: Video;
-  onDelete: (id: string) => void;
-  isAdmin: boolean;
-}) {
-  const [deleting, setDeleting] = useState(false);
-
-  const handleDelete = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (
-      !confirm(
-        `Delete "${video.title}"? This will remove all files from Google Drive.`,
-      )
-    )
-      return;
-    setDeleting(true);
-    try {
-      await videoApi.remove(video.id);
-      onDelete(video.id);
-    } catch {
-      alert("Failed to delete video. Please try again.");
-      setDeleting(false);
-    }
-  };
-
-  const duration = formatDuration(video.durationSeconds);
-
-  return (
-    <Link
-      href={video.status === "ready" ? `/watch/${video.id}` : "#"}
-      className={cn(
-        "block transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-xl h-full",
-        deleting && "opacity-50 pointer-events-none scale-95",
-        video.status === "ready" ? "cursor-pointer" : "cursor-default group/processing"
-      )}
-    >
-      <Card className="overflow-hidden h-full flex flex-col group hover:-translate-y-1.5 hover:shadow-xl hover:shadow-primary/5 hover:border-border/80 transition-all duration-300 bg-card border-border/40">
-        {/* Thumbnail */}
-        <div className="relative aspect-video bg-gradient-to-br from-card to-background border-b border-border/40 flex items-center justify-center overflow-hidden">
-          {video.status === "ready" && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={videoApi.getThumbnailUrl(video.id)}
-              alt=""
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-          )}
-
-          {/* Overlay icon */}
-          {video.status === "ready" ? (
-            <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors duration-500 rounded-t-xl" />
-          ) : video.status === "processing" ? (
-            <Loader2 className="animate-spin text-primary w-8 h-8" />
-          ) : (
-            <AlertCircle className="text-destructive w-8 h-8" />
-          )}
-
-           {/* Duration badge */}
-           {duration && (
-            <div className="absolute bottom-2 right-2 bg-black/75 text-white text-[11px] font-semibold px-1.5 py-0.5 rounded tracking-wide">
-              {duration}
-            </div>
-          )}
-
-          {/* Delete button */}
-          {isAdmin && (
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              title="Delete video"
-              className={cn(
-                "absolute top-3 right-3 w-8 h-8 rounded-full bg-black/40 border border-white/10 text-destructive text-sm flex items-center justify-center backdrop-blur-md transition-all opacity-0 group-hover:opacity-100",
-                !deleting && "hover:bg-destructive hover:text-white hover:border-destructive hover:scale-110",
-                deleting && "cursor-not-allowed opacity-100 bg-destructive/50"
-              )}
-            >
-              {deleting ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : "✕"}
-            </button>
-          )}
-        </div>
-
-        {/* Info */}
-        <CardContent className="p-5 flex flex-col flex-1">
-          <h3 className="text-base font-bold text-foreground leading-snug line-clamp-2 min-h-[2.8em] mb-3 group-hover:text-primary transition-colors">
-            {video.title}
-          </h3>
-          <div className="mb-4">
-            <StatusBadge status={video.status} />
-          </div>
-          <p className="text-[13px] font-medium text-muted-foreground mt-auto">
-            {new Date(video.createdAt).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </p>
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
+import { Card, CardContent } from "@/components/ui/card";
+import { VideoCard } from "@/components/VideoCard";
 
 function SkeletonCard() {
   return (
@@ -293,7 +160,7 @@ export default function HomePage() {
             <VideoCard
               key={v.id}
               video={v}
-              onDelete={handleDeleted}
+              onDeleted={() => handleDeleted(v.id)}
               isAdmin={isAdmin}
             />
           ))}
