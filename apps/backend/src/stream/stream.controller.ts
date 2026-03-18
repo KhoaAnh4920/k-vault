@@ -8,11 +8,15 @@ import {
   ParseUUIDPipe,
   Res,
   StreamableFile,
+  UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { StreamService } from './stream.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser, type AuthUser } from '../auth/jwt.strategy';
 
 @Controller('stream')
+@UseGuards(JwtAuthGuard)
 export class StreamController {
   constructor(private readonly streamService: StreamService) {}
 
@@ -24,8 +28,12 @@ export class StreamController {
   async getPlaylist(
     @Param('videoId', ParseUUIDPipe) videoId: string,
     @Res({ passthrough: true }) res: Response,
+    @CurrentUser() user: AuthUser,
   ): Promise<StreamableFile> {
-    const playlist = await this.streamService.getRewrittenPlaylist(videoId);
+    const playlist = await this.streamService.getRewrittenPlaylist(
+      videoId,
+      user,
+    );
     res.set({
       'Content-Type': 'application/vnd.apple.mpegurl',
       'Cache-Control': 'no-cache',
@@ -43,10 +51,12 @@ export class StreamController {
     @Param('videoId', ParseUUIDPipe) videoId: string,
     @Param('quality') quality: string,
     @Res({ passthrough: true }) res: Response,
+    @CurrentUser() user: AuthUser,
   ): Promise<StreamableFile> {
     const playlist = await this.streamService.getQualityPlaylist(
       videoId,
       quality,
+      user,
     );
     res.set({
       'Content-Type': 'application/vnd.apple.mpegurl',
@@ -64,9 +74,10 @@ export class StreamController {
   async getThumbnail(
     @Param('videoId', ParseUUIDPipe) videoId: string,
     @Res({ passthrough: true }) res: Response,
+    @CurrentUser() user: AuthUser,
   ): Promise<StreamableFile | void> {
     try {
-      const stream = await this.streamService.getThumbnailStream(videoId);
+      const stream = await this.streamService.getThumbnailStream(videoId, user);
       res.set({
         'Content-Type': 'image/jpeg',
         'Cache-Control': 'public, max-age=86400',
@@ -88,8 +99,9 @@ export class StreamController {
   @Get(':videoId/qualities')
   getQualities(
     @Param('videoId', ParseUUIDPipe) videoId: string,
+    @CurrentUser() user: AuthUser,
   ): Promise<string[]> {
-    return this.streamService.getQualities(videoId);
+    return this.streamService.getQualities(videoId, user);
   }
 
   /**
@@ -100,8 +112,9 @@ export class StreamController {
   async getChunk(
     @Param('fileId') fileId: string,
     @Res({ passthrough: true }) res: Response,
+    @CurrentUser() user: AuthUser,
   ): Promise<StreamableFile> {
-    const stream = await this.streamService.getChunkStream(fileId);
+    const stream = await this.streamService.getChunkStream(fileId, user);
     res.set({
       'Content-Type': 'video/MP2T',
       'Cache-Control': 'public, max-age=31536000, immutable',

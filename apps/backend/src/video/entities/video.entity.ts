@@ -45,6 +45,14 @@ export class Video {
   @Column({ type: 'bigint', nullable: true, name: 'duration_seconds' })
   durationSeconds: number | null;
 
+  /** Auth0 `sub` claim of the user who uploaded the video. */
+  @Column({ type: 'varchar', nullable: true, name: 'owner_id' })
+  ownerId: string | null;
+
+  /** When true, only the owner may stream this video. Defaults to true. */
+  @Column({ type: 'boolean', default: true, name: 'is_private' })
+  isPrivate: boolean;
+
   @OneToMany('VideoChunk', 'video', { cascade: false })
   chunks: unknown[];
 

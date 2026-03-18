@@ -1,9 +1,17 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Readable } from 'stream';
 import type { IStorageService } from '../storage/storage.interface';
 import { STORAGE_SERVICE } from '../storage/storage.interface';
 import { VideoService } from '../video/video.service';
 import { VideoStatus } from '../video/entities/video.entity';
+import type { AuthUser } from '../auth/jwt.strategy';
+import { Role } from '../auth/roles.decorator';
 
 const QUALITY_META: Record<string, { bandwidth: number; resolution: string }> =
   {
@@ -23,8 +31,8 @@ export class StreamService {
   ) {}
 
   /** Returns the master HLS playlist for a video. */
-  async getRewrittenPlaylist(videoId: string): Promise<string> {
-    const video = await this.videoService.findOne(videoId);
+  async getRewrittenPlaylist(videoId: string, user: AuthUser): Promise<string> {
+    const video = await this.videoService.findOne(videoId, user);
 
     if (video.status !== VideoStatus.READY) {
       throw new NotFoundException(
@@ -39,8 +47,12 @@ export class StreamService {
    * Returns the per-quality variant playlist built dynamically from DB chunks.
    * Called by hls.js after parsing the master playlist.
    */
-  async getQualityPlaylist(videoId: string, quality: string): Promise<string> {
-    const video = await this.videoService.findOne(videoId);
+  async getQualityPlaylist(
+    videoId: string,
+    quality: string,
+    user: AuthUser,
+  ): Promise<string> {
+    const video = await this.videoService.findOne(videoId, user);
     if (video.status !== VideoStatus.READY) {
       throw new NotFoundException(`Video ${videoId} is not ready`);
     }
@@ -70,18 +82,26 @@ export class StreamService {
   }
 
   /** Returns the sorted list of available quality levels for a video. */
-  async getQualities(videoId: string): Promise<string[]> {
+  async getQualities(videoId: string, user: AuthUser): Promise<string[]> {
+    await this.videoService.findOne(videoId, user); // privacy check
     return this.videoService.getVideoQualities(videoId);
   }
 
-  /** Pipe a .ts chunk by its Drive fileId directly to the response. */
-  async getChunkStream(fileId: string): Promise<Readable> {
+  /** Pipe a .ts chunk by its Drive fileId — verifies privacy via chunk→video lookup. */
+  async getChunkStream(fileId: string, user: AuthUser): Promise<Readable> {
+    const video = await this.videoService.findVideoByChunkFileId(fileId);
+    if (video?.isPrivate) {
+      const isAdmin = user.roles.includes(Role.ADMIN);
+      if (!isAdmin && video.ownerId !== user.userId) {
+        throw new ForbiddenException('Access denied');
+      }
+    }
     return this.storage.downloadFileAsStream(fileId);
   }
 
   /** Proxy the video thumbnail from Drive. Throws NotFoundException if absent. */
-  async getThumbnailStream(videoId: string): Promise<Readable> {
-    const video = await this.videoService.findOne(videoId);
+  async getThumbnailStream(videoId: string, user: AuthUser): Promise<Readable> {
+    const video = await this.videoService.findOne(videoId, user);
     const thumbnailId = video.thumbnailDriveFileId;
     if (!thumbnailId) {
       throw new NotFoundException(`No thumbnail for video ${videoId}`);

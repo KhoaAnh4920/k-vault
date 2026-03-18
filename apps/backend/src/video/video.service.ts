@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -9,6 +15,8 @@ import { Video, VideoStatus } from './entities/video.entity';
 import { VideoChunk } from './entities/video-chunk.entity';
 import { CreateVideoDto, InitUploadDto } from './dto/video.dto';
 import { TRANSCODE_QUEUE } from '../queue/queue.constants';
+import type { AuthUser } from '../auth/jwt.strategy';
+import { Role } from '../auth/roles.decorator';
 
 export interface TranscodeJobData {
   videoId: string;
@@ -33,23 +41,27 @@ export class VideoService {
     private readonly transcodeQueue: Queue<TranscodeJobData>,
   ) {}
 
-  async initiateUpload(dto: InitUploadDto) {
+  async initiateUpload(dto: InitUploadDto, ownerId: string) {
     const mimeType = dto.mimeType ?? 'video/mp4';
     const result = await this.storage.initiateResumableUpload(
       dto.fileName,
       mimeType,
     );
-    this.logger.log(`Resumable upload initiated: ${result.driveFileId}`);
+    this.logger.log(
+      `Resumable upload initiated by ${ownerId}: ${result.driveFileId}`,
+    );
     return result;
   }
 
-  async create(dto: CreateVideoDto): Promise<Video> {
+  async create(dto: CreateVideoDto, ownerId: string): Promise<Video> {
     const video = this.videoRepo.create({
       title: dto.title,
       description: dto.description ?? null,
       rawDriveFileId: dto.rawDriveFileId,
       category: (dto.category ?? null) as string | null,
       status: VideoStatus.PROCESSING,
+      ownerId,
+      isPrivate: dto.isPrivate ?? true,
     });
 
     const saved = await this.videoRepo.save(video);
@@ -67,9 +79,14 @@ export class VideoService {
     return saved;
   }
 
-  async findAll(category?: string): Promise<Video[]> {
+  async findAll(category?: string, user?: AuthUser): Promise<Video[]> {
+    const isAdmin = user?.roles.includes(Role.ADMIN) ?? false;
     return this.videoRepo.find({
-      where: category ? { category } : {},
+      where: {
+        ...(category ? { category } : {}),
+        // Viewers only see public videos; admins see everything
+        ...(!isAdmin ? { isPrivate: false } : {}),
+      },
       order: { createdAt: 'DESC' },
       select: [
         'id',
@@ -80,14 +97,27 @@ export class VideoService {
         'durationSeconds',
         'createdAt',
         'updatedAt',
+        'isPrivate',
       ],
     });
   }
 
-  async findOne(id: string): Promise<Video> {
+  async findOne(id: string, user?: AuthUser): Promise<Video> {
     const video = await this.videoRepo.findOne({ where: { id } });
     if (!video) throw new NotFoundException(`Video ${id} not found`);
+
+    const isAdmin = user?.roles.includes(Role.ADMIN) ?? false;
+    if (video.isPrivate && !isAdmin && video.ownerId !== user?.userId) {
+      throw new ForbiddenException(`Access denied to video ${id}`);
+    }
     return video;
+  }
+
+  /** Find the parent video for a given Drive chunk file ID. Used for privacy checks. */
+  async findVideoByChunkFileId(driveFileId: string): Promise<Video | null> {
+    const chunk = await this.chunkRepo.findOne({ where: { driveFileId } });
+    if (!chunk) return null;
+    return this.videoRepo.findOne({ where: { id: chunk.videoId } });
   }
 
   async updateStatus(

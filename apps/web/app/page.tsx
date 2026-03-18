@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { videoApi, type Video } from "@/lib/api";
 
 const POLL_INTERVAL = 5000;
@@ -45,9 +46,11 @@ function formatDuration(secs: number | null): string | null {
 function VideoCard({
   video,
   onDelete,
+  isAdmin,
 }: {
   video: Video;
   onDelete: (id: string) => void;
+  isAdmin: boolean;
 }) {
   const [deleting, setDeleting] = useState(false);
 
@@ -164,39 +167,41 @@ function VideoCard({
             </span>
           )}
 
-          {/* Delete button — top-right corner of thumbnail */}
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            title="Delete video"
-            style={{
-              position: "absolute",
-              top: 8,
-              right: 8,
-              width: 32,
-              height: 32,
-              borderRadius: "50%",
-              background: "rgba(0,0,0,0.6)",
-              border: "1px solid rgba(255,255,255,0.15)",
-              color: "#fca5a5",
-              fontSize: 14,
-              cursor: deleting ? "not-allowed" : "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              backdropFilter: "blur(4px)",
-              transition: "background 0.15s",
-            }}
-            onMouseEnter={(e) => {
-              if (!deleting)
-                e.currentTarget.style.background = "rgba(239,68,68,0.7)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "rgba(0,0,0,0.6)";
-            }}
-          >
-            {deleting ? "…" : "✕"}
-          </button>
+          {/* Delete button — only visible to Admin role */}
+          {isAdmin && (
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              title="Delete video"
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 8,
+                width: 32,
+                height: 32,
+                borderRadius: "50%",
+                background: "rgba(0,0,0,0.6)",
+                border: "1px solid rgba(255,255,255,0.15)",
+                color: "#fca5a5",
+                fontSize: 14,
+                cursor: deleting ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backdropFilter: "blur(4px)",
+                transition: "background 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                if (!deleting)
+                  e.currentTarget.style.background = "rgba(239,68,68,0.7)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(0,0,0,0.6)";
+              }}
+            >
+              {deleting ? "…" : "✕"}
+            </button>
+          )}
         </div>
 
         {/* Info */}
@@ -261,6 +266,9 @@ function SkeletonCard() {
 }
 
 export default function HomePage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user?.roles ?? []).includes("admin");
+
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -422,7 +430,12 @@ export default function HomePage() {
       ) : (
         <div className="video-grid">
           {videos.map((v) => (
-            <VideoCard key={v.id} video={v} onDelete={handleDeleted} />
+            <VideoCard
+              key={v.id}
+              video={v}
+              onDelete={handleDeleted}
+              isAdmin={isAdmin}
+            />
           ))}
         </div>
       )}

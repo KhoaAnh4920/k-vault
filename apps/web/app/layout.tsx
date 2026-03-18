@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import Providers from "./Providers";
+import AuthHeader from "./AuthHeader";
+import SessionGuard from "./SessionGuard";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -26,47 +29,11 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <header className="header">
-          <div
-            className="container-main"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              height: "64px",
-            }}
-          >
-            <a href="/" style={{ textDecoration: "none" }}>
-              <span
-                style={{
-                  fontSize: "22px",
-                  fontWeight: 800,
-                  letterSpacing: "-0.03em",
-                  color: "var(--accent)",
-                }}
-              >
-                K-VAULT
-              </span>
-            </a>
-            <nav style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <a
-                href="/"
-                className="btn-ghost nav-hide-mobile"
-                style={{ fontSize: "13px", padding: "7px 14px" }}
-              >
-                Library
-              </a>
-              <a
-                href="/upload"
-                className="btn-primary"
-                style={{ fontSize: "13px", padding: "8px 16px" }}
-              >
-                + Upload
-              </a>
-            </nav>
-          </div>
-        </header>
-        <main>{children}</main>
+        <Providers>
+          <SessionGuard />
+          <AuthHeader />
+          <main>{children}</main>
+        </Providers>
       </body>
     </html>
   );

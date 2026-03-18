@@ -3,7 +3,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
 import { Worker, Job } from "bullmq";
-import { downloadFile, uploadHlsDirectory } from "./drive";
+import { downloadFile, uploadHlsDirectory, deleteFile } from "./drive";
 import {
   getVideoInfo,
   selectQualities,
@@ -165,6 +165,17 @@ const worker = new Worker<TranscodeJobData>(
         thumbnailDriveFileId: thumbnailFileId ?? undefined,
         sourceHeight: videoInfo.height,
       });
+
+      // 8. Delete raw source file from Drive — no longer needed after HLS upload
+      console.log("🗑  Deleting raw source file from Drive...");
+      try {
+        await deleteFile(rawDriveFileId);
+        console.log(`   ✓ Raw file ${rawDriveFileId} deleted`);
+      } catch (err) {
+        console.warn(
+          `   ⚠  Could not delete raw file: ${(err as Error).message}`,
+        );
+      }
 
       console.log(`✅ [Job ${job.id}] Video ${videoId} is READY\n`);
     } catch (err) {

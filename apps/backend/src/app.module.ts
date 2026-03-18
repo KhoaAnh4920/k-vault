@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { validate } from './config/env.validation';
+import { AuthModule } from './auth/auth.module';
 import { StorageModule } from './storage/storage.module';
 import { VideoModule } from './video/video.module';
 import { StreamModule } from './stream/stream.module';
@@ -44,6 +45,7 @@ import { VideoChunk } from './video/entities/video-chunk.entity';
     }),
 
     // Feature Modules
+    AuthModule,
     StorageModule,
     VideoModule,
     StreamModule,

@@ -8,7 +8,7 @@ async function bootstrap() {
   app.setGlobalPrefix(process.env.API_PREFIX ?? 'api');
 
   app.enableCors({
-    origin: process.env.CORS_ORIGIN ?? 'http://localhost:3000',
+    origin: '*',
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     credentials: true,
   });

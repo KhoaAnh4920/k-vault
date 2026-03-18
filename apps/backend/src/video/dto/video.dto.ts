@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateVideoDto {
   @IsString()
@@ -16,6 +16,11 @@ export class CreateVideoDto {
   @IsString()
   @IsOptional()
   category?: string;
+
+  /** Whether the video is private (only owner can stream). Defaults to true. */
+  @IsBoolean()
+  @IsOptional()
+  isPrivate?: boolean;
 }
 
 export class InitUploadDto {

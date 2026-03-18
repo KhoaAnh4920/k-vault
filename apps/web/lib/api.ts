@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getSession } from "next-auth/react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 if (!API_BASE) {
@@ -9,6 +10,31 @@ const api = axios.create({
   baseURL: API_BASE,
   timeout: 300000,
 });
+
+api.interceptors.request.use(async (config) => {
+  try {
+    const session = await getSession();
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
+    }
+  } catch {
+    /* unauthenticated — backend returns 401 */
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (r) => r,
+  async (error) => {
+    if (error.response?.status === 401 && typeof window !== "undefined") {
+      const { signOut } = await import("next-auth/react");
+      await signOut({
+        callbackUrl: `/login?callbackUrl=${encodeURIComponent(window.location.pathname)}`,
+      });
+    }
+    return Promise.reject(error);
+  },
+);
 
 export interface Video {
   id: string;
@@ -96,8 +122,12 @@ export const videoApi = {
 
   getPlaylistUrl: (videoId: string) => `${API_BASE}/stream/${videoId}/playlist`,
 
-  getThumbnailUrl: (videoId: string) =>
-    `${API_BASE}/stream/${videoId}/thumbnail`,
+  /**
+   * Thumbnail is proxied through the Next.js server route so the browser
+   * automatically carries the session cookie — no custom headers needed
+   * for <img> tags.
+   */
+  getThumbnailUrl: (videoId: string) => `/api/thumbnail/${videoId}`,
 };
 
 export default api;

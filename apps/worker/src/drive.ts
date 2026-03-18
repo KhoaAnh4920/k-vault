@@ -75,6 +75,16 @@ export async function moveFile(
   });
 }
 
+/** Permanently deletes a file from Google Drive. Silently ignores 404 (already gone). */
+export async function deleteFile(fileId: string): Promise<void> {
+  try {
+    await drive.files.delete({ fileId });
+  } catch (err: unknown) {
+    const status = (err as { code?: number }).code;
+    if (status !== 404) throw err;
+  }
+}
+
 /** Create a subfolder in Google Drive and return its ID. */
 export async function createFolder(
   name: string,

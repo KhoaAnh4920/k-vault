@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { MediaPlayer, MediaProvider } from "@vidstack/react";
+import { useSession } from "next-auth/react";
+import { MediaPlayer, MediaProvider, isHLSProvider } from "@vidstack/react";
 import {
   defaultLayoutIcons,
   DefaultVideoLayout,
@@ -14,6 +15,8 @@ import { videoApi, type Video } from "@/lib/api";
 export default function WatchPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { data: session } = useSession();
+  const accessToken = session?.access_token ?? null;
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [playerError, setPlayerError] = useState<string | null>(null);
@@ -25,6 +28,29 @@ export default function WatchPage() {
       .catch(() => router.push("/"))
       .finally(() => setLoading(false));
   }, [id, router]);
+
+  /**
+   * Configure hls.js to send the Bearer token with every request
+   * (master playlist, quality playlists, and all .ts segments).
+   */
+  const handleProviderChange = useCallback(
+    (
+      provider: Parameters<
+        NonNullable<
+          React.ComponentProps<typeof MediaPlayer>["onProviderChange"]
+        >
+      >[0],
+    ) => {
+      if (isHLSProvider(provider) && accessToken) {
+        provider.config = {
+          xhrSetup: (xhr: XMLHttpRequest) => {
+            xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+          },
+        };
+      }
+    },
+    [accessToken],
+  );
 
   if (loading) {
     return (
@@ -85,6 +111,7 @@ export default function WatchPage() {
             }}
             poster={videoApi.getThumbnailUrl(id)}
             playsInline
+            onProviderChange={handleProviderChange}
             onError={() =>
               setPlayerError("Playback failed. Please try reloading the page.")
             }
@@ -186,4 +213,3 @@ export default function WatchPage() {
     </div>
   );
 }
-
