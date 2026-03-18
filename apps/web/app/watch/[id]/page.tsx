@@ -11,6 +11,9 @@ import {
 import "@vidstack/react/player/styles/default/theme.css";
 import "@vidstack/react/player/styles/default/layouts/video.css";
 import { videoApi, type Video } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Loader2, AlertTriangle, ArrowLeft } from "lucide-react";
 
 export default function WatchPage() {
   const { id } = useParams<{ id: string }>();
@@ -54,27 +57,11 @@ export default function WatchPage() {
 
   if (loading) {
     return (
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 24px" }}>
-        <div
-          className="skeleton"
-          style={{ aspectRatio: "16/9", borderRadius: 12 }}
-        />
-        <div
-          style={{
-            marginTop: 24,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
-          <div
-            className="skeleton"
-            style={{ height: 28, width: "50%", borderRadius: 6 }}
-          />
-          <div
-            className="skeleton"
-            style={{ height: 16, width: "35%", borderRadius: 4 }}
-          />
+      <div className="container mx-auto px-6 py-12 max-w-5xl">
+        <Skeleton className="aspect-video w-full rounded-xl" />
+        <div className="mt-6 flex flex-col gap-3">
+          <Skeleton className="h-7 w-1/2" />
+          <Skeleton className="h-4 w-1/3" />
         </div>
       </div>
     );
@@ -83,26 +70,18 @@ export default function WatchPage() {
   if (!video) return null;
 
   return (
-    <div
-      style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 24px 80px" }}
-    >
-      <button
+    <div className="container mx-auto px-6 pt-12 pb-20 max-w-5xl">
+      <Button
+        variant="ghost"
         onClick={() => router.back()}
-        className="btn-ghost"
-        style={{ marginBottom: 24, fontSize: 13 }}
+        className="mb-6 -ml-4 text-muted-foreground hover:text-foreground"
       >
-        ← Back
-      </button>
+        <ArrowLeft className="w-4 h-4 mr-2" />
+        Back
+      </Button>
 
       {video.status === "ready" ? (
-        <div
-          style={{
-            marginBottom: 32,
-            borderRadius: 12,
-            overflow: "hidden",
-            boxShadow: "0 8px 48px rgba(0,0,0,0.8)",
-          }}
-        >
+        <div className="mb-8 rounded-xl overflow-hidden shadow-2xl shadow-black/80 bg-black">
           <MediaPlayer
             title={video.title}
             src={{
@@ -117,90 +96,48 @@ export default function WatchPage() {
             }
           >
             <MediaProvider />
-            {/*
-              DefaultVideoLayout automatically shows a "Quality" submenu in the
-              settings gear when the master playlist has multiple renditions.
-              No manual switcher needed.
-            */}
             <DefaultVideoLayout icons={defaultLayoutIcons} />
           </MediaPlayer>
           {playerError && (
-            <div
-              style={{
-                padding: "12px 16px",
-                background: "rgba(239,68,68,0.1)",
-                border: "1px solid rgba(239,68,68,0.3)",
-                color: "#fca5a5",
-                fontSize: 13,
-              }}
-            >
-              ⚠️ {playerError}
+            <div className="p-4 bg-destructive/10 border-t border-destructive/30 text-red-400 text-sm flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              {playerError}
             </div>
           )}
         </div>
       ) : (
-        <div
-          style={{
-            aspectRatio: "16/9",
-            background: "var(--bg-card)",
-            borderRadius: 12,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: 32,
-            gap: 16,
-          }}
-        >
+        <div className="aspect-video bg-card border border-border rounded-xl flex flex-col items-center justify-center mb-8 gap-4 px-4 text-center">
           {video.status === "processing" ? (
             <>
-              <div
-                className="spinner"
-                style={{ width: 40, height: 40, borderWidth: 3 }}
-              />
-              <div style={{ textAlign: "center" }}>
-                <p style={{ margin: 0, fontWeight: 600 }}>
+              <Loader2 className="w-10 h-10 animate-spin text-primary" />
+              <div>
+                <p className="m-0 font-semibold text-foreground">
                   Transcoding in progress...
                 </p>
-                <p
-                  style={{
-                    margin: "4px 0 0",
-                    color: "var(--text-secondary)",
-                    fontSize: 13,
-                  }}
-                >
-                  This may take a few minutes. Start the local worker on your
-                  Mac.
+                <p className="mt-1 text-sm text-muted-foreground">
+                  This may take a few minutes. Start the local worker on your Mac.
                 </p>
               </div>
             </>
           ) : (
             <>
-              <span style={{ fontSize: 40 }}>⚠️</span>
-              <p style={{ margin: 0, color: "var(--text-secondary)" }}>
-                Transcoding failed
-              </p>
+              <AlertTriangle className="w-12 h-12 text-destructive mb-2" />
+              <p className="m-0 text-muted-foreground">Transcoding failed</p>
             </>
           )}
         </div>
       )}
 
       <div>
-        <h1 style={{ margin: "0 0 8px", fontSize: "clamp(20px, 3vw, 32px)" }}>
+        <h1 className="text-[clamp(20px,3vw,32px)] font-bold mb-2 text-foreground">
           {video.title}
         </h1>
         {video.description && (
-          <p
-            style={{
-              margin: "0 0 16px",
-              color: "var(--text-secondary)",
-              lineHeight: 1.6,
-            }}
-          >
+          <p className="mb-4 text-muted-foreground leading-relaxed whitespace-pre-wrap">
             {video.description}
           </p>
         )}
-        <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: 13 }}>
+        <p className="m-0 text-sm text-muted-foreground">
           Added{" "}
           {new Date(video.createdAt).toLocaleDateString("en-US", {
             weekday: "long",

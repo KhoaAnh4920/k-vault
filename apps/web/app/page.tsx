@@ -3,6 +3,13 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { videoApi, type Video } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Loader2, AlertCircle, Film } from "lucide-react";
+import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 const POLL_INTERVAL = 5000;
 
@@ -17,19 +24,16 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: Video["status"] }) {
-  const map: Record<
-    Video["status"],
-    { cls: string; dot: string; label: string }
-  > = {
-    processing: { cls: "badge-processing", dot: "⏳", label: "Processing" },
-    ready: { cls: "badge-ready", dot: "●", label: "Ready" },
-    error: { cls: "badge-error", dot: "✕", label: "Error" },
+  const map: Record<Video["status"], { variant: "secondary" | "default" | "destructive" | "outline", dot: string; label: string; cls: string }> = {
+    processing: { variant: "outline", dot: "⏳", label: "Processing", cls: "border-amber-500/50 bg-amber-500/10 text-amber-500" },
+    ready: { variant: "outline", dot: "●", label: "Ready", cls: "border-green-500/50 bg-green-500/10 text-green-500" },
+    error: { variant: "destructive", dot: "✕", label: "Error", cls: "" },
   };
-  const { cls, dot, label } = map[status];
+  const { variant, dot, label, cls } = map[status];
   return (
-    <span className={`badge ${cls}`}>
-      {dot} {label}
-    </span>
+    <Badge variant={variant} className={cn("gap-1.5 uppercase font-semibold text-[10px] tracking-wider", cls)}>
+      <span>{dot}</span> {label}
+    </Badge>
   );
 }
 
@@ -76,33 +80,17 @@ function VideoCard({
   const duration = formatDuration(video.durationSeconds);
 
   return (
-    <a
+    <Link
       href={video.status === "ready" ? `/watch/${video.id}` : "#"}
-      style={{ textDecoration: "none", display: "block" }}
+      className={cn(
+        "block transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-xl h-full",
+        deleting && "opacity-50 pointer-events-none scale-95",
+        video.status === "ready" ? "cursor-pointer" : "cursor-default group/processing"
+      )}
     >
-      <div
-        className="card"
-        style={{
-          padding: "0",
-          overflow: "hidden",
-          cursor: video.status === "ready" ? "pointer" : "default",
-          opacity: deleting ? 0.5 : 1,
-          transition: "opacity 0.2s",
-        }}
-      >
+      <Card className="overflow-hidden h-full flex flex-col group hover:-translate-y-1.5 hover:shadow-xl hover:shadow-primary/5 hover:border-border/80 transition-all duration-300 bg-card border-border/40">
         {/* Thumbnail */}
-        <div
-          style={{
-            aspectRatio: "16/9",
-            background: "linear-gradient(135deg, #1a1a25 0%, #0f0f1a 100%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            position: "relative",
-            overflow: "hidden",
-          }}
-        >
-          {/* Thumbnail image — hidden on error (video still processing or no thumbnail) */}
+        <div className="relative aspect-video bg-gradient-to-br from-card to-background border-b border-border/40 flex items-center justify-center overflow-hidden">
           {video.status === "ready" && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -111,157 +99,74 @@ function VideoCard({
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
               }}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-              }}
+              className="absolute inset-0 w-full h-full object-cover"
             />
           )}
 
           {/* Overlay icon */}
           {video.status === "ready" ? (
-            <div
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: "50%",
-                background: "rgba(0,0,0,0.55)",
-                backdropFilter: "blur(4px)",
-                border: "2px solid rgba(255,255,255,0.25)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 20,
-                color: "#fff",
-                position: "relative",
-              }}
-            >
-              ▶
-            </div>
+            <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors duration-500 rounded-t-xl" />
           ) : video.status === "processing" ? (
-            <div className="spinner" />
+            <Loader2 className="animate-spin text-primary w-8 h-8" />
           ) : (
-            <span style={{ fontSize: 28 }}>⚠</span>
+            <AlertCircle className="text-destructive w-8 h-8" />
           )}
 
-          {/* Duration badge */}
-          {duration && (
-            <span
-              style={{
-                position: "absolute",
-                bottom: 8,
-                right: 8,
-                background: "rgba(0,0,0,0.75)",
-                color: "#fff",
-                fontSize: 11,
-                fontWeight: 600,
-                padding: "2px 6px",
-                borderRadius: 4,
-                letterSpacing: "0.02em",
-              }}
-            >
+           {/* Duration badge */}
+           {duration && (
+            <div className="absolute bottom-2 right-2 bg-black/75 text-white text-[11px] font-semibold px-1.5 py-0.5 rounded tracking-wide">
               {duration}
-            </span>
+            </div>
           )}
 
-          {/* Delete button — only visible to Admin role */}
+          {/* Delete button */}
           {isAdmin && (
             <button
               onClick={handleDelete}
               disabled={deleting}
               title="Delete video"
-              style={{
-                position: "absolute",
-                top: 8,
-                right: 8,
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                background: "rgba(0,0,0,0.6)",
-                border: "1px solid rgba(255,255,255,0.15)",
-                color: "#fca5a5",
-                fontSize: 14,
-                cursor: deleting ? "not-allowed" : "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                backdropFilter: "blur(4px)",
-                transition: "background 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                if (!deleting)
-                  e.currentTarget.style.background = "rgba(239,68,68,0.7)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "rgba(0,0,0,0.6)";
-              }}
+              className={cn(
+                "absolute top-3 right-3 w-8 h-8 rounded-full bg-black/40 border border-white/10 text-destructive text-sm flex items-center justify-center backdrop-blur-md transition-all opacity-0 group-hover:opacity-100",
+                !deleting && "hover:bg-destructive hover:text-white hover:border-destructive hover:scale-110",
+                deleting && "cursor-not-allowed opacity-100 bg-destructive/50"
+              )}
             >
-              {deleting ? "…" : "✕"}
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : "✕"}
             </button>
           )}
         </div>
 
         {/* Info */}
-        <div style={{ padding: "16px" }}>
-          <h3
-            style={{
-              margin: "0 0 8px",
-              fontSize: 15,
-              fontWeight: 600,
-              color: "var(--text-primary)",
-              lineHeight: 1.4,
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-              minHeight: "2.8em",
-            }}
-          >
+        <CardContent className="p-5 flex flex-col flex-1">
+          <h3 className="text-base font-bold text-foreground leading-snug line-clamp-2 min-h-[2.8em] mb-3 group-hover:text-primary transition-colors">
             {video.title}
           </h3>
-          <div style={{ marginBottom: 8 }}>
+          <div className="mb-4">
             <StatusBadge status={video.status} />
           </div>
-          <p
-            style={{ margin: 0, fontSize: 12, color: "var(--text-secondary)" }}
-          >
+          <p className="text-[13px] font-medium text-muted-foreground mt-auto">
             {new Date(video.createdAt).toLocaleDateString("en-US", {
               month: "short",
               day: "numeric",
               year: "numeric",
             })}
           </p>
-        </div>
-      </div>
-    </a>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
 function SkeletonCard() {
   return (
-    <div className="card" style={{ overflow: "hidden" }}>
-      <div className="skeleton" style={{ aspectRatio: "16/9" }} />
-      <div
-        style={{
-          padding: "16px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-        }}
-      >
-        <div
-          className="skeleton"
-          style={{ height: 16, borderRadius: 6, width: "70%" }}
-        />
-        <div
-          className="skeleton"
-          style={{ height: 12, borderRadius: 4, width: "40%" }}
-        />
-      </div>
-    </div>
+    <Card className="overflow-hidden border-border/40">
+      <Skeleton className="aspect-video w-full rounded-none" />
+      <CardContent className="p-5 flex flex-col gap-3">
+        <Skeleton className="h-5 w-[85%] rounded" />
+        <Skeleton className="h-4 w-[60%] rounded mt-1" />
+        <Skeleton className="h-3 w-1/3 rounded mt-4" />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -276,7 +181,6 @@ export default function HomePage() {
     undefined,
   );
 
-  // Collect all categories present in the loaded video list
   const availableCategories = Array.from(
     new Set(videos.map((v) => v.category).filter(Boolean)),
   ) as string[];
@@ -305,7 +209,6 @@ export default function HomePage() {
 
   useEffect(() => {
     void fetchVideos();
-    // Poll every 5s so processing status updates automatically
     const interval = setInterval(
       () => void fetchVideos(activeCategory),
       POLL_INTERVAL,
@@ -317,118 +220,75 @@ export default function HomePage() {
   const hasProcessing = videos.some((v) => v.status === "processing");
 
   return (
-    <div
-      className="container-main"
-      style={{ paddingTop: 48, paddingBottom: 80 }}
-    >
+    <div className="container mx-auto px-6 max-w-[1400px] pt-16 pb-24">
       {/* Hero */}
-      <div style={{ marginBottom: 32 }}>
-        <h1
-          style={{
-            fontSize: "clamp(28px, 4vw, 48px)",
-            margin: "0 0 12px",
-            background: "linear-gradient(135deg, #f1f5f9, #94a3b8)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-          }}
-        >
-          Your Library
+      <div className="mb-12 relative">
+        <div className="absolute inset-0 -z-10 h-full w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_50%_50%_at_0%_0%,#000_60%,transparent_100%)] opacity-[0.03]"></div>
+        <h1 className="text-[clamp(36px,5vw,56px)] font-black tracking-tight mb-4 bg-gradient-to-br from-foreground via-foreground/90 to-muted-foreground bg-clip-text text-transparent">
+          Library
         </h1>
-        <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: 16 }}>
+        <p className="text-lg text-muted-foreground m-0 max-w-2xl font-medium">
           {loading
-            ? "Loading..."
-            : `${videos.length} video${videos.length !== 1 ? "s" : ""}${hasProcessing ? " · Transcoding in progress..." : ""}`}
+            ? "Loading your collection..."
+            : `You have ${videos.length} video${videos.length !== 1 ? "s" : ""} in your vault.${hasProcessing ? " Transcoding is currently in progress." : ""}`}
         </p>
       </div>
 
       {/* Category filter chips */}
       {(availableCategories.length > 0 || activeCategory) && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            marginBottom: 32,
-          }}
-        >
-          <button
+        <div className="flex gap-2.5 flex-wrap mb-10">
+          <Button
+            variant={!activeCategory ? "default" : "secondary"}
+            className={cn("rounded-full text-[13px] h-9 px-5 transition-all shadow-sm", !activeCategory && "shadow-primary/20")}
             onClick={() => handleCategoryChange(undefined)}
-            style={{
-              padding: "6px 14px",
-              borderRadius: 20,
-              border: "1px solid var(--border)",
-              background: !activeCategory ? "var(--accent)" : "var(--bg-card)",
-              color: !activeCategory ? "#0a0a0f" : "var(--text-secondary)",
-              fontWeight: !activeCategory ? 600 : 400,
-              fontSize: 13,
-              cursor: "pointer",
-              transition: "all 0.15s",
-            }}
           >
             All
-          </button>
+          </Button>
           {availableCategories.map((cat) => (
-            <button
+            <Button
               key={cat}
+              variant={activeCategory === cat ? "default" : "secondary"}
+              className={cn("rounded-full text-[13px] h-9 px-5 transition-all shadow-sm", activeCategory === cat && "shadow-primary/20")}
               onClick={() => handleCategoryChange(cat)}
-              style={{
-                padding: "6px 14px",
-                borderRadius: 20,
-                border: "1px solid var(--border)",
-                background:
-                  activeCategory === cat ? "var(--accent)" : "var(--bg-card)",
-                color:
-                  activeCategory === cat ? "#0a0a0f" : "var(--text-secondary)",
-                fontWeight: activeCategory === cat ? 600 : 400,
-                fontSize: 13,
-                cursor: "pointer",
-                transition: "all 0.15s",
-              }}
             >
               {CATEGORY_LABELS[cat] ?? cat}
-            </button>
+            </Button>
           ))}
         </div>
       )}
 
       {/* Error */}
       {error && (
-        <div
-          style={{
-            background: "rgba(239,68,68,0.1)",
-            border: "1px solid rgba(239,68,68,0.3)",
-            borderRadius: 12,
-            padding: 20,
-            marginBottom: 32,
-            color: "#fca5a5",
-          }}
-        >
+        <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-5 mb-8 text-red-400">
           {error}
         </div>
       )}
 
       {/* Grid */}
       {loading ? (
-        <div className="video-grid">
-          {Array.from({ length: 6 }).map((_, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
+          {Array.from({ length: 8 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
       ) : videos.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "80px 0" }}>
-          <div style={{ fontSize: 64, marginBottom: 16 }}>🎬</div>
-          <h2 style={{ margin: "0 0 8px", color: "var(--text-primary)" }}>
-            No videos yet
-          </h2>
-          <p style={{ margin: "0 0 24px", color: "var(--text-secondary)" }}>
-            Upload your first video to get started
+        <div className="text-center py-24 flex flex-col items-center justify-center max-w-md mx-auto relative mt-12">
+          <div className="absolute inset-0 -z-10 bg-primary/5 blur-3xl rounded-full" />
+          <div className="w-24 h-24 bg-muted/30 rounded-full flex items-center justify-center mb-6 ring-1 ring-border shadow-inner">
+            <Film className="w-10 h-10 text-muted-foreground" />
+          </div>
+          <h2 className="text-2xl font-bold text-foreground mb-3 tracking-tight">Your vault is empty</h2>
+          <p className="text-muted-foreground mb-8 text-center leading-relaxed">
+            Upload your first video to start building your personal streaming collection.
           </p>
-          <a href="/upload" className="btn-primary">
-            Upload Video
-          </a>
+          {isAdmin && (
+            <Link href="/upload" className={cn(buttonVariants({ size: "lg" }), "rounded-full shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 transition-all")}>
+              Upload New Video
+            </Link>
+          )}
         </div>
       ) : (
-        <div className="video-grid">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
           {videos.map((v) => (
             <VideoCard
               key={v.id}

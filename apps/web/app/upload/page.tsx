@@ -3,6 +3,13 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { videoApi, uploadFileInChunks } from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Card, CardContent } from "@/components/ui/card";
+import { Loader2, Film, FolderUp, CheckCircle2, AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type Stage = "idle" | "uploading" | "saving" | "done" | "error";
 
@@ -90,25 +97,23 @@ export default function UploadPage() {
   const canSubmit = file && title.trim() && stage === "idle";
 
   return (
-    <div
-      className="container-main"
-      style={{ paddingTop: 48, paddingBottom: 80, maxWidth: 680 }}
-    >
-      <div style={{ marginBottom: 40 }}>
-        <h1 style={{ fontSize: 32, margin: "0 0 8px" }}>Upload Video</h1>
-        <p style={{ margin: 0, color: "var(--text-secondary)" }}>
+    <div className="container mx-auto px-4 max-w-2xl pt-12 pb-20">
+      <div className="mb-10">
+        <h1 className="text-3xl font-extrabold mb-2">Upload Video</h1>
+        <p className="text-muted-foreground">
           Upload a raw video file. Transcoding to HLS will begin automatically.
         </p>
       </div>
 
-      <form
-        onSubmit={(e) => void handleSubmit(e)}
-        style={{ display: "flex", flexDirection: "column", gap: 24 }}
-      >
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6">
         {/* Drop zone */}
-        <div
+        <Card
           id="dropzone"
-          className={`dropzone${dragOver ? " drag-over" : ""}`}
+          className={cn(
+            "border-2 border-dashed transition-colors cursor-pointer text-center",
+            dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50",
+            file ? "py-10" : "py-16"
+          )}
           onClick={() => document.getElementById("file-input")?.click()}
           onDrop={handleDrop}
           onDragOver={(e) => {
@@ -117,115 +122,71 @@ export default function UploadPage() {
           }}
           onDragLeave={() => setDragOver(false)}
         >
-          <input
-            id="file-input"
-            type="file"
-            accept="video/*"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleFile(f);
-            }}
-          />
-          {file ? (
-            <div>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>🎬</div>
-              <p style={{ margin: "0 0 4px", fontWeight: 600 }}>{file.name}</p>
-              <p
-                style={{
-                  margin: 0,
-                  color: "var(--text-secondary)",
-                  fontSize: 13,
-                }}
-              >
-                {(file.size / 1024 / 1024).toFixed(1)} MB
-              </p>
-            </div>
-          ) : (
-            <div>
-              <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }}>
-                📁
+          <CardContent className="p-0 flex flex-col items-center justify-center">
+            <input
+              id="file-input"
+              type="file"
+              accept="video/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFile(f);
+              }}
+            />
+            {file ? (
+              <div className="flex flex-col items-center">
+                <Film className="w-12 h-12 text-primary mb-3" />
+                <p className="font-semibold text-foreground mb-1">{file.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {(file.size / 1024 / 1024).toFixed(1)} MB
+                </p>
               </div>
-              <p style={{ margin: "0 0 8px", fontWeight: 600 }}>
-                Drag & drop your video here
-              </p>
-              <p
-                style={{
-                  margin: 0,
-                  color: "var(--text-secondary)",
-                  fontSize: 13,
-                }}
-              >
-                MP4, MOV, MKV supported · Up to 5 GB
-              </p>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className="flex flex-col items-center">
+                <FolderUp className="w-14 h-14 text-muted-foreground/50 mb-4" />
+                <p className="font-semibold text-foreground mb-2">
+                  Drag & drop your video here
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  MP4, MOV, MKV supported · Up to 5 GB
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Title */}
-        <div>
-          <label
-            style={{
-              display: "block",
-              marginBottom: 8,
-              fontWeight: 600,
-              fontSize: 14,
-            }}
-          >
-            Title *
+        <div className="space-y-2">
+          <label className="text-sm font-semibold leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+            Title <span className="text-destructive">*</span>
           </label>
-          <input
+          <Input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Enter video title"
             required
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              color: "var(--text-primary)",
-              fontSize: 15,
-              outline: "none",
-            }}
+            className="text-[15px] h-11"
           />
         </div>
 
         {/* Category */}
-        <div>
-          <label
-            style={{
-              display: "block",
-              marginBottom: 8,
-              fontWeight: 600,
-              fontSize: 14,
-            }}
-          >
-            Category{" "}
-            <span style={{ color: "var(--text-secondary)", fontWeight: 400 }}>
-              (optional)
-            </span>
+        <div className="space-y-2">
+          <label className="text-sm font-semibold leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex gap-1">
+            Category <span className="text-muted-foreground font-normal">(optional)</span>
           </label>
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              color: category ? "var(--text-primary)" : "var(--text-secondary)",
-              fontSize: 15,
-              outline: "none",
-              cursor: "pointer",
-            }}
+            className={cn(
+               "flex h-11 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-[15px] ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+               !category && "text-muted-foreground"
+            )}
+            style={{ WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none' }}
           >
             <option value="">Select a category...</option>
             {CATEGORIES.map((c) => (
-              <option key={c} value={c.toLowerCase()}>
+              <option key={c} value={c.toLowerCase()} className="text-foreground">
                 {c}
               </option>
             ))}
@@ -233,118 +194,66 @@ export default function UploadPage() {
         </div>
 
         {/* Description */}
-        <div>
-          <label
-            style={{
-              display: "block",
-              marginBottom: 8,
-              fontWeight: 600,
-              fontSize: 14,
-            }}
-          >
-            Description{" "}
-            <span style={{ color: "var(--text-secondary)", fontWeight: 400 }}>
-              (optional)
-            </span>
+        <div className="space-y-2">
+          <label className="text-sm font-semibold leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex gap-1">
+            Description <span className="text-muted-foreground font-normal">(optional)</span>
           </label>
-          <textarea
+          <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Brief description..."
-            rows={3}
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              color: "var(--text-primary)",
-              fontSize: 15,
-              outline: "none",
-              resize: "vertical",
-              fontFamily: "inherit",
-            }}
+            rows={4}
+            className="text-[15px] resize-y"
           />
         </div>
 
         {/* Progress */}
         {(stage === "uploading" || stage === "saving") && (
-          <div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginBottom: 8,
-                fontSize: 13,
-              }}
-            >
-              <span style={{ color: "var(--text-secondary)" }}>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">
                 {stage === "uploading"
                   ? "Uploading..."
                   : "Registering video..."}
               </span>
-              <span style={{ fontWeight: 600 }}>{progress}%</span>
+              <span className="font-semibold">{progress}%</span>
             </div>
-            <div className="progress-bar">
-              <div
-                className="progress-fill"
-                style={{ width: `${stage === "saving" ? 100 : progress}%` }}
-              />
-            </div>
+            <Progress value={stage === "saving" ? 100 : progress} className="h-1.5" />
           </div>
         )}
 
         {/* Success */}
         {stage === "done" && (
-          <div
-            style={{
-              background: "rgba(34,197,94,0.1)",
-              border: "1px solid rgba(34,197,94,0.3)",
-              borderRadius: 8,
-              padding: 16,
-              color: "#86efac",
-            }}
-          >
-            ✓ Upload complete! Transcoding will begin shortly. Redirecting...
+          <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 text-green-500 flex items-center gap-3">
+            <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+            <p className="text-sm font-medium">Upload complete! Transcoding will begin shortly. Redirecting...</p>
           </div>
         )}
 
         {/* Error */}
         {(errorMsg || stage === "error") && (
-          <div
-            style={{
-              background: "rgba(239,68,68,0.1)",
-              border: "1px solid rgba(239,68,68,0.3)",
-              borderRadius: 8,
-              padding: 16,
-              color: "#fca5a5",
-            }}
-          >
-            {errorMsg || "An unexpected error occurred."}
+          <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4 text-red-500 flex items-center gap-3">
+             <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <p className="text-sm font-medium">{errorMsg || "An unexpected error occurred."}</p>
           </div>
         )}
 
         {/* Submit */}
-        <button
+        <Button
           type="submit"
           id="upload-submit"
-          className="btn-primary"
           disabled={!canSubmit}
-          style={{
-            alignSelf: "flex-start",
-            fontSize: 15,
-            padding: "14px 28px",
-          }}
+          className="text-[15px] px-8 h-11"
         >
           {stage === "uploading" || stage === "saving" ? (
             <>
-              <div className="spinner" style={{ width: 16, height: 16 }} />{" "}
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Uploading...
             </>
           ) : (
-            "Upload"
+            "Upload Video"
           )}
-        </button>
+        </Button>
       </form>
     </div>
   );

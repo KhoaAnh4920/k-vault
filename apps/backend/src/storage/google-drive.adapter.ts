@@ -88,7 +88,7 @@ export class GoogleDriveAdapter implements IStorageService {
       { responseType: 'stream' },
     );
 
-    return response.data as Readable;
+    return response.data;
   }
 
   async uploadFromStream(
