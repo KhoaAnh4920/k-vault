@@ -129,6 +129,7 @@ export const videoApi = {
     description?: string;
     category?: string;
     rawDriveFileId: string;
+    thumbnailBase64?: string;
   }) => api.post<Video>("/videos", payload).then((r) => r.data),
 
   remove: (id: string) => api.delete(`/videos/${id}`),
@@ -143,7 +144,12 @@ export const videoApi = {
   getThumbnailUrl: (videoId: string) => `/api/thumbnail/${videoId}`,
 
   subscribeToEvents: async (
-    onMessage: (data: { videoId: string; status: "ready" | "error" }) => void,
+    onMessage: (data: {
+      videoId: string;
+      status: "ready" | "processing" | "error";
+      progress?: number;
+      detail?: string;
+    }) => void,
     signal: AbortSignal,
   ) => {
     const { fetchEventSource } = await import("@microsoft/fetch-event-source");

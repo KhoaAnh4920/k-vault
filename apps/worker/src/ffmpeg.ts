@@ -43,14 +43,24 @@ export function getVideoInfo(inputPath: string): Promise<VideoInfo> {
 }
 
 /**
- * Returns the quality presets applicable to the given source height.
- * Only presets whose height ≤ source height are included.
+ * Returns the quality presets applicable to the given source video info.
+ * Uses the larger dimension (width or height) to classify resolution.
+ * Only presets whose target height ≤ source max dimension are included.
  * Always returns at least the lowest preset.
  */
-export function selectQualities(sourceHeight: number): QualityPreset[] {
-  const applicable = ALL_QUALITY_PRESETS.filter(
-    (q) => q.height <= sourceHeight,
-  );
+export function selectQualities(info: VideoInfo): QualityPreset[] {
+  const maxDim = Math.max(info.width, info.height);
+
+  // We map the incoming video to standard tiers.
+  // Thresholds use standard widths (1920, 1280, 854) to be safe.
+  const applicable = ALL_QUALITY_PRESETS.filter((q) => {
+    if (q.name === "1080p") return maxDim >= 1900;
+    if (q.name === "720p") return maxDim >= 1200;
+    if (q.name === "480p") return maxDim >= 800;
+    if (q.name === "360p") return true; // Always available as fallback
+    return q.height <= maxDim;
+  });
+
   return applicable.length > 0
     ? applicable
     : [ALL_QUALITY_PRESETS[ALL_QUALITY_PRESETS.length - 1]!];
@@ -72,19 +82,54 @@ export async function transcodeToHls(
   inputPath: string,
   outputBaseDir: string,
   qualities: QualityPreset[],
+  onQualityStart?: (qualityName: string) => Promise<void>,
+  onProgress?: (percent: number) => void | Promise<void>,
+  segmentTime: number = 6,
 ): Promise<TranscodeResult> {
-  let durationSeconds = 0;
+  if (onQualityStart)
+    await onQualityStart("Initializing parallel transcoding...");
 
-  for (const quality of qualities) {
-    const qualityDir = path.join(outputBaseDir, quality.name);
-    fs.mkdirSync(qualityDir, { recursive: true });
+  // console.log(
+  //   `🎞  Parallel transcoding to HLS (${qualities.length} qualities)...`,
+  // );
 
-    console.log(`  ⚙️  Transcoding ${quality.name}...`);
-    const dur = await transcodeQuality(inputPath, qualityDir, quality);
-    if (dur > 0) durationSeconds = dur;
-    console.log(`  ✓ ${quality.name} done`);
-  }
+  // Track progress of each tier to calculate aggregate percentage
+  const progressMap = new Map<string, number>();
+  qualities.forEach((q) => progressMap.set(q.name, 0));
 
+  const updateAggregateProgress = () => {
+    if (!onProgress) return;
+    const sum = Array.from(progressMap.values()).reduce((a, b) => a + b, 0);
+    const average = sum / qualities.length;
+
+    onProgress(average);
+  };
+
+  const results = await Promise.all(
+    qualities.map(async (quality) => {
+      // Each parallel branch checks if the video still exists
+      if (onQualityStart) await onQualityStart(quality.name);
+
+      const qualityDir = path.join(outputBaseDir, quality.name);
+      fs.mkdirSync(qualityDir, { recursive: true });
+
+      // console.log(`  ⚙️  Starting ${quality.name}...`);
+      const dur = await transcodeQuality(
+        inputPath,
+        qualityDir,
+        quality,
+        segmentTime,
+        (p) => {
+          progressMap.set(quality.name, p);
+          updateAggregateProgress();
+        },
+      );
+      // console.log(`  ✓ ${quality.name} done`);
+      return dur;
+    }),
+  );
+
+  const durationSeconds = Math.max(0, ...results);
   return { hlsBaseDir: outputBaseDir, durationSeconds, qualities };
 }
 
@@ -115,11 +160,13 @@ async function transcodeQuality(
   inputPath: string,
   outputDir: string,
   quality: QualityPreset,
+  segmentTime: number,
+  onProgress?: (percent: number) => void | Promise<void>,
 ): Promise<number> {
   const playlistPath = path.join(outputDir, "playlist.m3u8");
   let durationSeconds = 0;
 
-  await new Promise<void>((resolve, reject) => {
+  await new Promise<number>((resolve, reject) => {
     ffmpeg(inputPath)
       .videoCodec("h264_videotoolbox")
       .audioCodec("aac")
@@ -131,13 +178,13 @@ async function transcodeQuality(
         "-b:a",
         quality.audioBitrate,
         "-hls_time",
-        "6",
+        segmentTime.toString(),
         "-hls_list_size",
         "0",
         "-hls_segment_filename",
         path.join(outputDir, "segment%03d.ts"),
         "-hls_flags",
-        "independent_segments",
+        "independent_segments+temp_file",
         "-f",
         "hls",
       ])
@@ -146,18 +193,23 @@ async function transcodeQuality(
         if (data.duration) durationSeconds = parseDuration(data.duration);
       })
       .on("progress", (p: { percent?: number }) => {
-        if (p.percent !== undefined)
-          process.stdout.write(
-            `\r     ${quality.name}: ${p.percent.toFixed(1)}%`,
-          );
+        if (p.percent !== undefined) {
+          if (onProgress) onProgress(p.percent);
+        }
       })
       .on("end", () => {
-        process.stdout.write("\n");
-        resolve();
+        resolve(durationSeconds);
       })
       .on("error", (err: Error, _: unknown, stderr: unknown) => {
         if (String(stderr).includes("videotoolbox")) {
-          transcodeQualitySoftware(inputPath, outputDir, quality, playlistPath)
+          transcodeQualitySoftware(
+            inputPath,
+            outputDir,
+            quality,
+            playlistPath,
+            segmentTime,
+            onProgress,
+          )
             .then(resolve)
             .catch(reject);
         } else {
@@ -175,11 +227,13 @@ async function transcodeQualitySoftware(
   outputDir: string,
   quality: QualityPreset,
   playlistPath: string,
-): Promise<void> {
+  segmentTime: number,
+  onProgress?: (percent: number) => void,
+): Promise<number> {
   console.warn(
     `  ⚠  videotoolbox unavailable for ${quality.name}, using libx264`,
   );
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<number>((resolve, reject) => {
     ffmpeg(inputPath)
       .videoCodec("libx264")
       .audioCodec("aac")
@@ -193,18 +247,26 @@ async function transcodeQualitySoftware(
         "-b:a",
         quality.audioBitrate,
         "-hls_time",
-        "6",
+        segmentTime.toString(),
         "-hls_list_size",
         "0",
         "-hls_segment_filename",
         path.join(outputDir, "segment%03d.ts"),
         "-hls_flags",
-        "independent_segments",
+        "independent_segments+temp_file",
         "-f",
         "hls",
       ])
       .output(playlistPath)
-      .on("end", () => resolve())
+      .on("progress", (p: { percent?: number }) => {
+        if (p.percent !== undefined) {
+          if (onProgress) onProgress(p.percent);
+          // process.stdout.write(
+          //   `\r     ${quality.name} (SW): ${p.percent.toFixed(1)}%`,
+          // );
+        }
+      })
+      .on("end", () => resolve(0))
       .on("error", (err: Error) => reject(err))
       .run();
   });

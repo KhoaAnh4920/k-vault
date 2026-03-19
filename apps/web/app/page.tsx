@@ -20,7 +20,6 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { VideoCard } from "@/components/VideoCard";
 
-
 const CATEGORY_LABELS: Record<string, string> = {
   entertainment: "Entertainment",
   education: "Education",
@@ -55,7 +54,9 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
 
   // Filters
-  const [activeCategory, setActiveCategory] = useState<string | undefined>(undefined);
+  const [activeCategory, setActiveCategory] = useState<string | undefined>(
+    undefined,
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState("newest"); // 'newest', 'oldest', 'views'
@@ -83,7 +84,7 @@ export default function HomePage() {
       cat: string | undefined,
       search: string,
       sort: string,
-      isInitial: boolean
+      isInitial: boolean,
     ) => {
       if (isInitial) setLoading(true);
       else setFetchingMore(true);
@@ -117,7 +118,7 @@ export default function HomePage() {
         setFetchingMore(false);
       }
     },
-    []
+    [],
   );
 
   // Reset pagination on filter changes
@@ -148,14 +149,16 @@ export default function HomePage() {
   // Real-time Video Status SSE
   useEffect(() => {
     const abortCtrl = new AbortController();
-    
-    void videoApi.subscribeToEvents((data) => {
-      setVideos((prev) =>
-        prev.map((v) =>
-          v.id === data.videoId ? { ...v, status: data.status } : v
-        )
-      );
-    }, abortCtrl.signal).catch(console.error);
+
+    void videoApi
+      .subscribeToEvents((data) => {
+        setVideos((prev) =>
+          prev.map((v) =>
+            v.id === data.videoId ? { ...v, status: data.status } : v,
+          ),
+        );
+      }, abortCtrl.signal)
+      .catch(console.error);
 
     return () => abortCtrl.abort();
   }, []);
@@ -172,7 +175,7 @@ export default function HomePage() {
       {/* Hero */}
       <div className="mb-12 relative">
         <div className="absolute inset-0 -z-10 h-full w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_50%_50%_at_0%_0%,#000_60%,transparent_100%)] opacity-[0.03]"></div>
-        <h1 className="text-[clamp(36px,5vw,56px)] font-black tracking-tight mb-4 bg-gradient-to-br from-foreground via-foreground/90 to-muted-foreground bg-clip-text text-transparent">
+        <h1 className="text-5xl font-black tracking-tight mb-4 bg-gradient-to-br from-foreground via-foreground/90 to-muted-foreground bg-clip-text text-transparent">
           Library
         </h1>
         <p className="text-lg text-muted-foreground m-0 max-w-2xl font-medium">
@@ -183,7 +186,7 @@ export default function HomePage() {
       </div>
 
       {/* Toolbar: Search & Sort */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-8">
+      {/* <div className="flex flex-col sm:flex-row gap-4 mb-8">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -206,7 +209,7 @@ export default function HomePage() {
             </SelectContent>
           </Select>
         </div>
-      </div>
+      </div> */}
 
       {/* Category filter chips */}
       <div className="flex gap-2.5 flex-wrap mb-10 overflow-x-auto pb-2 scrollbar-none">
@@ -214,7 +217,7 @@ export default function HomePage() {
           variant={!activeCategory ? "default" : "secondary"}
           className={cn(
             "rounded-full text-[13px] h-9 px-5 transition-all shadow-sm shrink-0",
-            !activeCategory && "shadow-primary/20"
+            !activeCategory && "shadow-primary/20",
           )}
           onClick={() => setActiveCategory(undefined)}
         >
@@ -226,7 +229,7 @@ export default function HomePage() {
             variant={activeCategory === cat ? "default" : "secondary"}
             className={cn(
               "rounded-full text-[13px] h-9 px-5 transition-all shadow-sm shrink-0",
-              activeCategory === cat && "shadow-primary/20"
+              activeCategory === cat && "shadow-primary/20",
             )}
             onClick={() => setActiveCategory(cat)}
           >
@@ -268,7 +271,7 @@ export default function HomePage() {
               href="/upload"
               className={cn(
                 buttonVariants({ size: "lg" }),
-                "rounded-full shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 transition-all"
+                "rounded-full shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 transition-all",
               )}
             >
               Upload New Video

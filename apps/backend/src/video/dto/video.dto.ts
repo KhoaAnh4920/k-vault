@@ -21,6 +21,11 @@ export class CreateVideoDto {
   @IsBoolean()
   @IsOptional()
   isPrivate?: boolean;
+
+  /** Base64 string of the selected thumbnail (optional) */
+  @IsString()
+  @IsOptional()
+  thumbnailBase64?: string;
 }
 
 export class InitUploadDto {

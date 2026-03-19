@@ -127,6 +127,34 @@ export async function createFolder(
   return res.data.id;
 }
 
+/** Create folder and move raw file before transcoding starts */
+export async function prepareVideoFolder(
+  videoId: string,
+  rawDriveFileId: string,
+  parentFolderId?: string,
+): Promise<string> {
+  const videoFolderId = await createFolder(videoId, parentFolderId);
+  await moveFile(rawDriveFileId, videoFolderId);
+  return videoFolderId;
+}
+
+/** Helper for uploading a single standardized HLS segment */
+export async function uploadSingleSegment(
+  localPath: string,
+  qualityName: string,
+  originalFilename: string,
+  videoFolderId: string,
+): Promise<{ filename: string; driveFileId: string }> {
+  const driveName = `${qualityName}_${originalFilename}`;
+  const fileId = await uploadFile(
+    localPath,
+    driveName,
+    "video/MP2T",
+    videoFolderId,
+  );
+  return { filename: driveName, driveFileId: fileId };
+}
+
 /** Upload all HLS segments for each quality into a single flat Drive folder,
  *  moves the raw source file in, and uploads the thumbnail if provided.
  *
@@ -140,6 +168,7 @@ export async function uploadHlsDirectory(
   thumbnailLocalPath: string | null,
   qualities: Array<{ name: string }>,
   parentFolderId?: string,
+  onProgress?: (progress: number) => void,
 ): Promise<{
   videoFolderId: string;
   thumbnailFileId: string | null;
@@ -166,7 +195,12 @@ export async function uploadHlsDirectory(
     sequence: number;
     quality: string;
   }> = [];
-
+  let totalChunks = 0;
+  for (const q of qualities) {
+    const qDir = path.join(hlsBaseDir, q.name);
+    totalChunks += fs.readdirSync(qDir).filter((f) => f.endsWith(".ts")).length;
+  }
+  let uploadedChunks = 0;
   for (const quality of qualities) {
     const qualityDir = path.join(hlsBaseDir, quality.name);
     const tsFiles = fs
@@ -202,6 +236,10 @@ export async function uploadHlsDirectory(
         }),
       );
       allChunks.push(...results);
+      uploadedChunks += results.length;
+      if (onProgress) {
+        onProgress(Math.min(99, Math.round((uploadedChunks / totalChunks) * 100)));
+      }
     }
   }
 

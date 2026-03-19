@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Readable } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -13,6 +14,7 @@ import { TRANSCODE_QUEUE } from '../queue/queue.constants';
 export interface TranscodeJobData {
   videoId: string;
   rawDriveFileId: string;
+  thumbnailDriveFileId?: string | null;
 }
 
 @Injectable()
@@ -46,6 +48,33 @@ export class VideoCommandService {
   }
 
   async create(dto: CreateVideoDto, ownerId: string): Promise<Video> {
+    let thumbnailDriveFileId: string | null = null;
+
+    if (dto.thumbnailBase64) {
+      try {
+        const base64Data = dto.thumbnailBase64.replace(
+          /^data:image\/\w+;base64,/,
+          '',
+        );
+        const buffer = Buffer.from(base64Data, 'base64');
+        const stream = new Readable();
+        stream.push(buffer);
+        stream.push(null);
+
+        thumbnailDriveFileId = await this.storage.uploadFromStream(stream, {
+          name: `thumb_${Date.now()}.jpg`,
+          mimeType: 'image/jpeg',
+        });
+        this.logger.log(
+          `Thumbnail uploaded for new video: ${thumbnailDriveFileId}`,
+        );
+      } catch (err) {
+        this.logger.error(
+          `Failed to upload provided thumbnail: ${(err as Error).message}`,
+        );
+      }
+    }
+
     const video = this.videoRepo.create({
       title: dto.title,
       description: dto.description ?? null,
@@ -54,14 +83,23 @@ export class VideoCommandService {
       status: VideoStatus.PROCESSING,
       ownerId,
       isPrivate: dto.isPrivate ?? true,
+      thumbnailDriveFileId,
     });
 
     const saved = await this.videoRepo.save(video);
 
     await this.transcodeQueue.add(
       'transcode',
-      { videoId: saved.id, rawDriveFileId: saved.rawDriveFileId ?? '' },
-      { attempts: 3, backoff: { type: 'exponential', delay: 5000 } },
+      {
+        videoId: saved.id,
+        rawDriveFileId: saved.rawDriveFileId ?? '',
+        thumbnailDriveFileId: saved.thumbnailDriveFileId,
+      },
+      {
+        jobId: saved.id, // Set jobId to videoId for easy removal on delete
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+      },
     );
 
     this.logger.log(`Video ${saved.id} created and queued for transcoding`);
@@ -110,6 +148,21 @@ export class VideoCommandService {
       } catch (err) {
         this.logger.warn(
           `Failed to delete Drive folder ${folderId}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // If processing, attempt to remove from BullMQ
+    if (video.status === VideoStatus.PROCESSING) {
+      try {
+        const job = await this.transcodeQueue.getJob(id);
+        if (job) {
+          await job.remove();
+          this.logger.log(`Removed active transcode job for video ${id}`);
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Failed to remove job for video ${id}: ${(err as Error).message}`,
         );
       }
     }

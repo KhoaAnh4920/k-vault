@@ -81,3 +81,13 @@ export async function saveVideoChunks(
     values,
   );
 }
+
+export async function checkVideoExists(
+  pool: Pool,
+  videoId: string,
+): Promise<boolean> {
+  const { rows } = await pool.query("SELECT id FROM videos WHERE id = $1", [
+    videoId,
+  ]);
+  return rows.length > 0;
+}

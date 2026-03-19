@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { MediaPlayer, MediaProvider, isHLSProvider, MediaPlayerInstance } from "@vidstack/react";
+import {
+  MediaPlayer,
+  MediaProvider,
+  isHLSProvider,
+  MediaPlayerInstance,
+} from "@vidstack/react";
 import {
   defaultLayoutIcons,
   DefaultVideoLayout,
@@ -43,7 +48,7 @@ function DescriptionWithTimestamps({
         className="text-primary hover:underline font-bold bg-primary/10 px-1 rounded mx-0.5 transition-colors"
       >
         {timeStr}
-      </button>
+      </button>,
     );
     lastIndex = regex.lastIndex;
   }
@@ -62,7 +67,7 @@ export default function WatchPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const accessToken = session?.access_token ?? null;
-  
+
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [playerError, setPlayerError] = useState<string | null>(null);
@@ -78,10 +83,16 @@ export default function WatchPage() {
         setVideo(v);
         // Load history progress
         try {
-          const history = JSON.parse(localStorage.getItem("k-vault-history") || "[]");
+          const history = JSON.parse(
+            localStorage.getItem("k-vault-history") || "[]",
+          );
           const found = history.find((h: any) => h.videoId === v.id);
           // If video isn't finished (leave 5 seconds margin), resume from last position
-          if (found && v.durationSeconds && found.progress < v.durationSeconds - 5) {
+          if (
+            found &&
+            v.durationSeconds &&
+            found.progress < v.durationSeconds - 5
+          ) {
             setStartTime(found.progress);
           }
         } catch {
@@ -96,7 +107,9 @@ export default function WatchPage() {
   const handleProviderChange = useCallback(
     (
       provider: Parameters<
-        NonNullable<React.ComponentProps<typeof MediaPlayer>["onProviderChange"]>
+        NonNullable<
+          React.ComponentProps<typeof MediaPlayer>["onProviderChange"]
+        >
       >[0],
     ) => {
       if (isHLSProvider(provider) && accessToken) {
@@ -111,28 +124,31 @@ export default function WatchPage() {
   );
 
   // Track playback time safely (throttled locally, saved globally)
-  const handleTimeUpdate = useCallback((detail: { currentTime: number }) => {
-    if (!video) return;
-    try {
-      const historyStr = localStorage.getItem("k-vault-history") || "[]";
-      let history = JSON.parse(historyStr);
-      history = history.filter((h: any) => h.videoId !== video.id);
-      
-      // Save current progress
-      history.push({
-        videoId: video.id,
-        progress: detail.currentTime,
-        timestamp: Date.now()
-      });
-      
-      // Keep only last 100 watched videos
-      if (history.length > 100) history.shift();
-      
-      localStorage.setItem("k-vault-history", JSON.stringify(history));
-    } catch {
-      // Ignored
-    }
-  }, [video]);
+  const handleTimeUpdate = useCallback(
+    (detail: { currentTime: number }) => {
+      if (!video) return;
+      try {
+        const historyStr = localStorage.getItem("k-vault-history") || "[]";
+        let history = JSON.parse(historyStr);
+        history = history.filter((h: any) => h.videoId !== video.id);
+
+        // Save current progress
+        history.push({
+          videoId: video.id,
+          progress: detail.currentTime,
+          timestamp: Date.now(),
+        });
+
+        // Keep only last 100 watched videos
+        if (history.length > 100) history.shift();
+
+        localStorage.setItem("k-vault-history", JSON.stringify(history));
+      } catch {
+        // Ignored
+      }
+    },
+    [video],
+  );
 
   // Jump to specific time (Timestamps click)
   const handleSeek = (secs: number) => {
@@ -190,7 +206,7 @@ export default function WatchPage() {
                 supporting Double Tap, Gestures, Swipes intuitively */}
             <DefaultVideoLayout icons={defaultLayoutIcons} />
           </MediaPlayer>
-          
+
           {playerError && (
             <div className="p-4 bg-destructive/10 border-t border-destructive/30 text-red-400 text-sm flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
@@ -208,7 +224,8 @@ export default function WatchPage() {
                   Transcoding in progress...
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  This may take a few minutes. Start the local worker on your Mac.
+                  This may take a few minutes. Start the local worker on your
+                  Mac.
                 </p>
               </div>
             </>
@@ -222,7 +239,7 @@ export default function WatchPage() {
       )}
 
       <div>
-        <h1 className="text-[clamp(20px,3vw,32px)] font-bold mb-2 text-foreground">
+        <h1 className="text-xl font-bold mb-2 text-foreground">
           {video.title}
         </h1>
         {video.description && (
@@ -233,7 +250,10 @@ export default function WatchPage() {
         )}
         <div className="flex items-center gap-2 m-0 text-sm text-muted-foreground font-medium">
           <span>
-            {new Intl.NumberFormat("en-US", { notation: "compact" }).format(video.views)} views
+            {new Intl.NumberFormat("en-US", { notation: "compact" }).format(
+              video.views,
+            )}{" "}
+            views
           </span>
           <span>•</span>
           <span>
