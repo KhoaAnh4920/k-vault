@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -17,7 +18,7 @@ import { Observable, fromEvent } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { VideoService } from './video.service';
-import { CreateVideoDto, InitUploadDto } from './dto/video.dto';
+import { CreateVideoDto, InitUploadDto, UpdateVideoMetadataDto } from './dto/video.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles, Role } from '../auth/roles.decorator';
@@ -96,6 +97,17 @@ export class VideoController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.videoService.findOne(id, user);
+  }
+
+  @Patch(':id')
+  @HttpCode(HttpStatus.OK)
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateVideoMetadataDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const isAdmin = user.roles.includes(Role.ADMIN);
+    return this.videoService.updateMetadata(id, user.userId, dto, isAdmin);
   }
 
   @Delete(':id')

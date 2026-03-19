@@ -13,6 +13,11 @@ export enum VideoStatus {
   ERROR = 'error',
 }
 
+export enum VideoVisibility {
+  PUBLIC = 'public',
+  PRIVATE = 'private',
+}
+
 @Entity('videos')
 export class Video {
   @PrimaryGeneratedColumn('uuid')
@@ -52,9 +57,14 @@ export class Video {
   @Column({ type: 'varchar', nullable: true, name: 'owner_id' })
   ownerId: string | null;
 
-  /** When true, only the owner may stream this video. Defaults to true. */
-  @Column({ type: 'boolean', default: true, name: 'is_private' })
-  isPrivate: boolean;
+  /** Public videos are visible to all; Private videos only to owner/admin. */
+  @Column({
+    type: 'enum',
+    enum: VideoVisibility,
+    default: VideoVisibility.PUBLIC,
+    name: 'visibility',
+  })
+  visibility: VideoVisibility;
 
   @OneToMany('VideoChunk', 'video', { cascade: false })
   chunks: unknown[];

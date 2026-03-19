@@ -46,6 +46,7 @@ interface UploadItem {
   realtimeStatus?: string;
   realtimeProgress?: number;
   realtimeDetail?: string;
+  visibility: "public" | "private";
 }
 
 const CATEGORIES = [
@@ -98,6 +99,7 @@ export default function UploadPage() {
         expanded: false,
         thumbnails: [],
         selectedThumbnail: null,
+        visibility: "public",
       });
 
       // Extract thumbnails in background
@@ -207,6 +209,7 @@ export default function UploadPage() {
           category: itemCat || undefined,
           rawDriveFileId: driveFileId,
           thumbnailBase64: it.selectedThumbnail || undefined,
+          visibility: it.visibility,
         });
         updateItem(id, {
           stage: "done",
@@ -614,6 +617,61 @@ export default function UploadPage() {
                               className="h-32 resize-none bg-background/50 border-border/60 focus:border-primary/50 transition-all leading-relaxed"
                             />
                           </div>
+
+                          {/* Visibility Selector */}
+                          <div className="space-y-2 pt-2">
+                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                              Visibility
+                            </label>
+                            <div className="flex gap-3">
+                              {(["public", "private"] as const).map((v) => (
+                                <button
+                                  key={v}
+                                  onClick={() => updateItem(item.id, { visibility: v })}
+                                  className={cn(
+                                    "flex-1 py-2.5 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all",
+                                    item.visibility === v
+                                      ? "bg-primary text-white border-primary shadow-lg shadow-primary/20"
+                                      : "bg-background border-border hover:border-primary/40 text-muted-foreground"
+                                  )}
+                                >
+                                  {v}
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-muted-foreground/60 ml-1">
+                              {item.visibility === "public"
+                                ? "Anyone can find and watch your video."
+                                : "Only you can see and play this video."}
+                            </p>
+                          </div>
+
+                          {/* Save Changes Button (Only show if video is already ready) */}
+                          {item.realtimeStatus === "ready" && (
+                            <div className="pt-4">
+                              <Button
+                                size="sm"
+                                className="w-full gap-2 font-bold"
+                                onClick={async () => {
+                                  if (!item.videoId) return;
+                                  try {
+                                    await videoApi.updateMetadata(item.videoId, {
+                                      title: item.title,
+                                      description: item.description,
+                                      category: item.category,
+                                      visibility: item.visibility,
+                                    });
+                                    updateItem(item.id, { expanded: false });
+                                    // toast.success("Video updated");
+                                  } catch (err) {
+                                    console.error("Update failed", err);
+                                  }
+                                }}
+                              >
+                                Save Changes
+                              </Button>
+                            </div>
+                          )}
                         </div>
 
                         {/* Right Column: Thumbnail Picker */}

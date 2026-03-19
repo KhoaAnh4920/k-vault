@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Readable } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -6,9 +6,9 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import type { IStorageService } from '../storage/storage.interface';
 import { STORAGE_SERVICE } from '../storage/storage.interface';
-import { Video, VideoStatus } from './entities/video.entity';
+import { Video, VideoStatus, VideoVisibility } from './entities/video.entity';
 import { VideoChunk } from './entities/video-chunk.entity';
-import { CreateVideoDto, InitUploadDto } from './dto/video.dto';
+import { CreateVideoDto, InitUploadDto, UpdateVideoMetadataDto } from './dto/video.dto';
 import { TRANSCODE_QUEUE } from '../queue/queue.constants';
 
 export interface TranscodeJobData {
@@ -82,7 +82,7 @@ export class VideoCommandService {
       category: dto.category ?? null,
       status: VideoStatus.PROCESSING,
       ownerId,
-      isPrivate: dto.isPrivate ?? true,
+      visibility: dto.visibility ?? VideoVisibility.PUBLIC,
       thumbnailDriveFileId,
     });
 
@@ -120,6 +120,33 @@ export class VideoCommandService {
     >,
   ): Promise<void> {
     await this.videoRepo.update(id, { status, ...extra });
+  }
+
+  async updateMetadata(
+    id: string,
+    ownerId: string,
+    dto: UpdateVideoMetadataDto,
+    isAdmin = false,
+  ): Promise<Video> {
+    const video = await this.videoRepo.findOne({ where: { id } });
+    if (!video) throw new NotFoundException(`Video ${id} not found`);
+
+    if (!isAdmin && video.ownerId !== ownerId) {
+      throw new ForbiddenException(
+        'You do not have permission to edit this video',
+      );
+    }
+
+    // Update only provided fields
+    if (dto.title !== undefined) video.title = dto.title;
+    if (dto.description !== undefined) video.description = dto.description;
+    if (dto.category !== undefined) video.category = dto.category;
+    if (dto.visibility !== undefined) video.visibility = dto.visibility;
+    if (dto.thumbnailDriveFileId !== undefined) {
+      video.thumbnailDriveFileId = dto.thumbnailDriveFileId;
+    }
+
+    return this.videoRepo.save(video);
   }
 
   async incrementViews(id: string): Promise<void> {

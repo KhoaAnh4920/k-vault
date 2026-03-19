@@ -10,7 +10,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { IStorageService } from '../storage/storage.interface';
 import { STORAGE_SERVICE } from '../storage/storage.interface';
 import { VideoService } from '../video/video.service';
-import { VideoStatus } from '../video/entities/video.entity';
+import { VideoStatus, VideoVisibility } from '../video/entities/video.entity';
 import type { AuthUser } from '../auth/jwt.strategy';
 import { Role } from '../auth/roles.decorator';
 
@@ -97,7 +97,7 @@ export class StreamService {
   /** Pipe a .ts chunk by its Drive fileId — verifies privacy via chunk→video lookup. */
   async getChunkStream(fileId: string, user: AuthUser): Promise<Readable> {
     const video = await this.videoService.findVideoByChunkFileId(fileId);
-    if (video?.isPrivate) {
+    if (video?.visibility === VideoVisibility.PRIVATE) {
       const isAdmin = user.roles.includes(Role.ADMIN);
       if (!isAdmin && video.ownerId !== user.userId) {
         throw new ForbiddenException('Access denied');

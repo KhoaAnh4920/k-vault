@@ -3,7 +3,7 @@ import { VideoQueryService } from './video.query.service';
 import { VideoCommandService } from './video.command.service';
 import { Video, VideoStatus } from './entities/video.entity';
 import { VideoChunk } from './entities/video-chunk.entity';
-import { CreateVideoDto, InitUploadDto } from './dto/video.dto';
+import { CreateVideoDto, InitUploadDto, UpdateVideoMetadataDto } from './dto/video.dto';
 import type { AuthUser } from '../auth/jwt.strategy';
 
 /** Facade service retaining the old interface for controllers */
@@ -74,6 +74,15 @@ export class VideoService {
     quality: string,
   ): Promise<VideoChunk[]> {
     return this.queryService.getChunksByQuality(videoId, quality);
+  }
+
+  async updateMetadata(
+    id: string,
+    ownerId: string,
+    dto: UpdateVideoMetadataDto,
+    isAdmin = false,
+  ): Promise<Video> {
+    return this.commandService.updateMetadata(id, ownerId, dto, isAdmin);
   }
 
   async remove(id: string): Promise<void> {

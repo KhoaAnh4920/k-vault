@@ -1,20 +1,37 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "./ui/badge";
+import { Card, CardContent } from "./ui/card";
 import { videoApi, type Video } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { AlertCircle, Eye, Loader2, MoreVertical, Trash2 } from "lucide-react";
+import { AlertCircle, Eye, Globe, Loader2, Lock, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "./ui/dialog";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import { Button } from "./ui/button";
 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "./ui/dropdown-menu";
 
 function StatusBadge({ status }: { status: Video["status"] }) {
   const map: Record<
@@ -71,17 +88,41 @@ function formatDuration(secs: number | null): string | null {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function PrivacyBadge({ visibility }: { visibility: Video["visibility"] }) {
+  if (visibility === "public") return null;
+  return (
+    <Badge
+      variant="outline"
+      className="gap-1.5 uppercase font-semibold text-[10px] tracking-wider border-blue-500/50 bg-blue-500/10 text-blue-400"
+    >
+      <Lock className="w-3 h-3" /> Private
+    </Badge>
+  );
+}
+
 export function VideoCard({
   video,
   isAdmin,
+  currentUserId,
   onDeleted,
 }: {
   video: Video;
   isAdmin: boolean;
+  currentUserId?: string;
   onDeleted: () => void;
 }) {
   const [deleting, setDeleting] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editData, setEditData] = useState({
+    title: video.title,
+    category: video.category || "other",
+    visibility: video.visibility,
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const isOwner = !!(currentUserId && video.ownerId === currentUserId);
+  const canModify = isAdmin || isOwner;
 
   const duration = formatDuration(video.durationSeconds);
 
@@ -106,7 +147,6 @@ export function VideoCard({
   }, [video.id, video.durationSeconds]);
 
   const handleDelete = async () => {
-    console.log("Run handleDelete");
     if (deleting) return;
     setDeleting(true);
     try {
@@ -114,10 +154,31 @@ export function VideoCard({
       toast.success("Video deleted completely");
       onDeleted();
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        toast.error((err as any).response?.data?.message || err.message);
-      }
+      const message = err instanceof Error ? err.message : "Failed to delete";
+      toast.error(message);
       setDeleting(false);
+    }
+  };
+
+  const handleUpdateMetadata = async () => {
+    setSavingEdit(true);
+    try {
+      await videoApi.updateMetadata(video.id, {
+        title: editData.title,
+        category: editData.category,
+        visibility: editData.visibility,
+      });
+      toast.success("Video updated successfully");
+      setIsEditDialogOpen(false);
+      // Update local object (parent ref)
+      video.title = editData.title;
+      video.category = editData.category;
+      video.visibility = editData.visibility;
+    } catch (err: unknown) {
+      console.error("Update error:", err);
+      toast.error("Failed to update video");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -193,31 +254,40 @@ export function VideoCard({
                 })}
               </span>
             </div>
-            <div>
+            <div className="flex items-center gap-2">
               <StatusBadge status={video.status} />
+              <PrivacyBadge visibility={video.visibility} />
             </div>
           </div>
         </CardContent>
       </Link>
 
-      {/* 3-Dot Menu Config (Admin only for now) */}
-      {isAdmin && (
+      {/* 3-Dot Menu Config (Admin or Owner) */}
+      {canModify && (
         <div className="absolute top-2 right-2 z-30">
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <button className="w-8 h-8 rounded-full bg-black/40 border border-white/10 text-white text-sm flex items-center justify-center backdrop-blur-md opacity-0 group-hover:opacity-100 transition-all hover:bg-black/60 focus:opacity-100" />
+                <button className="w-8 h-8 rounded-full bg-black/40 border border-white/10 text-white text-sm flex items-center justify-center backdrop-blur-md opacity-0 group-hover:opacity-100 transition-all hover:bg-black/60 focus:opacity-100">
+                  {deleting ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  ) : (
+                    <MoreVertical className="w-4 h-4" />
+                  )}
+                </button>
               }
-            >
-              {deleting ? (
-                <Loader2 className="w-4 h-4 animate-spin text-white" />
-              ) : (
-                <MoreVertical className="w-4 h-4" />
-              )}
-            </DropdownMenuTrigger>
+            />
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem
-                className="text-destructive focus:bg-destructive/10 focus:text-destructive cursor-pointer"
+                className="cursor-pointer"
+                onClick={() => setIsEditDialogOpen(true)}
+              >
+                <Pencil className="w-4 h-4 mr-2" />
+                <span>Edit</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                className="cursor-pointer"
                 onClick={handleDelete}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
@@ -227,6 +297,91 @@ export function VideoCard({
           </DropdownMenu>
         </div>
       )}
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Video Details</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="title">Title</Label>
+              <Input
+                id="title"
+                value={editData.title}
+                onChange={(e) =>
+                  setEditData({ ...editData, title: e.target.value })
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="category">Category</Label>
+              <Select
+                value={editData.category}
+                onValueChange={(v) => {
+                  if (v) setEditData({ ...editData, category: v })
+                }}
+              >
+                <SelectTrigger id="category">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="entertainment">Entertainment</SelectItem>
+                  <SelectItem value="education">Education</SelectItem>
+                  <SelectItem value="music">Music</SelectItem>
+                  <SelectItem value="gaming">Gaming</SelectItem>
+                  <SelectItem value="sports">Sports</SelectItem>
+                  <SelectItem value="tech">Tech</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="visibility">Visibility</Label>
+              <Select
+                value={editData.visibility}
+                onValueChange={(v) => {
+                  if (v === "public" || v === "private") {
+                    setEditData({ ...editData, visibility: v })
+                  }
+                }}
+              >
+                <SelectTrigger id="visibility">
+                  <SelectValue placeholder="Select visibility" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public">
+                    <div className="flex items-center gap-2">
+                      <Globe className="w-4 h-4" />
+                      <span>Public</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="private">
+                    <div className="flex items-center gap-2">
+                      <Lock className="w-4 h-4" />
+                      <span>Private</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
+              disabled={savingEdit}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateMetadata} disabled={savingEdit}>
+              {savingEdit && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

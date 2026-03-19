@@ -185,32 +185,6 @@ export default function HomePage() {
         </p>
       </div>
 
-      {/* Toolbar: Search & Sort */}
-      {/* <div className="flex flex-col sm:flex-row gap-4 mb-8">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Search videos..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-background/50 backdrop-blur-sm border-border/50 h-11 shadow-sm rounded-full"
-          />
-        </div>
-        <div className="w-full sm:w-48">
-          <Select value={sortBy} onValueChange={(val) => { if (val) setSortBy(val); }}>
-            <SelectTrigger className="h-11 rounded-full bg-background/50 backdrop-blur-sm border-border/50 shadow-sm">
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="newest">Newest First</SelectItem>
-              <SelectItem value="oldest">Oldest First</SelectItem>
-              <SelectItem value="views">Most Viewed</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div> */}
-
       {/* Category filter chips */}
       <div className="flex gap-2.5 flex-wrap mb-10 overflow-x-auto pb-2 scrollbar-none">
         <Button
@@ -287,6 +261,7 @@ export default function HomePage() {
                 video={v}
                 onDeleted={() => handleDeleted(v.id)}
                 isAdmin={isAdmin}
+                currentUserId={session?.user?.id}
               />
             ))}
           </div>

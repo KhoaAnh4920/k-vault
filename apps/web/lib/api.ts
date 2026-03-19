@@ -44,6 +44,8 @@ export interface Video {
   category: string | null;
   durationSeconds: number | null;
   views: number;
+  visibility: "public" | "private";
+  ownerId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -130,7 +132,19 @@ export const videoApi = {
     category?: string;
     rawDriveFileId: string;
     thumbnailBase64?: string;
+    visibility?: "public" | "private";
   }) => api.post<Video>("/videos", payload).then((r) => r.data),
+
+  updateMetadata: (
+    id: string,
+    payload: {
+      title?: string;
+      description?: string;
+      category?: string;
+      visibility?: "public" | "private";
+      thumbnailDriveFileId?: string;
+    },
+  ) => api.patch<Video>(`/videos/${id}`, payload).then((r) => r.data),
 
   remove: (id: string) => api.delete(`/videos/${id}`),
 

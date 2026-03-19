@@ -1,4 +1,5 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { VideoVisibility } from '../entities/video.entity';
 
 export class CreateVideoDto {
   @IsString()
@@ -17,15 +18,37 @@ export class CreateVideoDto {
   @IsOptional()
   category?: string;
 
-  /** Whether the video is private (only owner can stream). Defaults to true. */
-  @IsBoolean()
+  /** Whether the video is public or private. Defaults to 'public'. */
+  @IsEnum(VideoVisibility)
   @IsOptional()
-  isPrivate?: boolean;
+  visibility?: VideoVisibility;
 
   /** Base64 string of the selected thumbnail (optional) */
   @IsString()
   @IsOptional()
   thumbnailBase64?: string;
+}
+
+export class UpdateVideoMetadataDto {
+  @IsString()
+  @IsOptional()
+  title?: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsString()
+  @IsOptional()
+  category?: string;
+
+  @IsEnum(VideoVisibility)
+  @IsOptional()
+  visibility?: VideoVisibility;
+
+  @IsString()
+  @IsOptional()
+  thumbnailDriveFileId?: string;
 }
 
 export class InitUploadDto {

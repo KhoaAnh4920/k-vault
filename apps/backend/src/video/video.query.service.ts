@@ -1,17 +1,20 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Video } from './entities/video.entity';
+import { Brackets, Repository } from 'typeorm';
+import { Video, VideoVisibility } from './entities/video.entity';
 import { VideoChunk } from './entities/video-chunk.entity';
 import type { AuthUser } from '../auth/jwt.strategy';
 import { Role } from '../auth/roles.decorator';
 
 @Injectable()
 export class VideoQueryService {
+  private readonly logger = new Logger(VideoQueryService.name);
+
   constructor(
     @InjectRepository(Video)
     private readonly videoRepo: Repository<Video>,
@@ -29,6 +32,7 @@ export class VideoQueryService {
     sortBy: string = 'createdAt',
     sortOrder: 'ASC' | 'DESC' = 'DESC',
   ): Promise<{ data: Video[]; hasMore: boolean; total: number }> {
+    const currentUserId = user?.userId ?? 'none';
     const isAdmin = user?.roles.includes(Role.ADMIN) ?? false;
     const qb = this.videoRepo.createQueryBuilder('v');
 
@@ -36,7 +40,16 @@ export class VideoQueryService {
       qb.andWhere('v.category = :category', { category });
     }
     if (!isAdmin) {
-      qb.andWhere('v.isPrivate = :isPrivate', { isPrivate: false });
+      qb.andWhere(
+        new Brackets((hb) => {
+          hb.where('v.visibility = :public')
+            .orWhere('v.ownerId = :userId');
+        }),
+      );
+      qb.setParameters({
+        public: VideoVisibility.PUBLIC,
+        userId: currentUserId,
+      });
     }
     if (search) {
       qb.andWhere('v.title ILIKE :search', { search: `%${search}%` });
@@ -56,9 +69,10 @@ export class VideoQueryService {
       'v.category',
       'v.durationSeconds',
       'v.views',
+      'v.ownerId',
       'v.createdAt',
       'v.updatedAt',
-      'v.isPrivate',
+      'v.visibility',
       'v.thumbnailDriveFileId'
     ]);
 
@@ -76,7 +90,9 @@ export class VideoQueryService {
     if (!video) throw new NotFoundException(`Video ${id} not found`);
 
     const isAdmin = user?.roles.includes(Role.ADMIN) ?? false;
-    if (video.isPrivate && !isAdmin && video.ownerId !== user?.userId) {
+    const isOwner = video.ownerId === user?.userId;
+
+    if (video.visibility === VideoVisibility.PRIVATE && !isAdmin && !isOwner) {
       throw new ForbiddenException(`Access denied to video ${id}`);
     }
     return video;
