@@ -20,27 +20,55 @@ export class VideoQueryService {
     private readonly chunkRepo: Repository<VideoChunk>,
   ) {}
 
-  async findAll(category?: string, user?: AuthUser): Promise<Video[]> {
+  async findAll(
+    category?: string,
+    user?: AuthUser,
+    page: number = 1,
+    limit: number = 12,
+    search?: string,
+    sortBy: string = 'createdAt',
+    sortOrder: 'ASC' | 'DESC' = 'DESC',
+  ): Promise<{ data: Video[]; hasMore: boolean; total: number }> {
     const isAdmin = user?.roles.includes(Role.ADMIN) ?? false;
-    return this.videoRepo.find({
-      where: {
-        ...(category ? { category } : {}),
-        ...(!isAdmin ? { isPrivate: false } : {}),
-      },
-      order: { createdAt: 'DESC' },
-      select: [
-        'id',
-        'title',
-        'description',
-        'status',
-        'category',
-        'durationSeconds',
-        'views',
-        'createdAt',
-        'updatedAt',
-        'isPrivate',
-      ],
-    });
+    const qb = this.videoRepo.createQueryBuilder('v');
+
+    if (category) {
+      qb.andWhere('v.category = :category', { category });
+    }
+    if (!isAdmin) {
+      qb.andWhere('v.isPrivate = :isPrivate', { isPrivate: false });
+    }
+    if (search) {
+      qb.andWhere('v.title ILIKE :search', { search: `%${search}%` });
+    }
+
+    const orderColumn = sortBy === 'views' ? 'v.views' : 'v.createdAt';
+    qb.orderBy(orderColumn, sortOrder);
+
+    const skip = (page - 1) * limit;
+    qb.skip(skip).take(limit);
+
+    qb.select([
+      'v.id',
+      'v.title',
+      'v.description',
+      'v.status',
+      'v.category',
+      'v.durationSeconds',
+      'v.views',
+      'v.createdAt',
+      'v.updatedAt',
+      'v.isPrivate',
+      'v.thumbnailDriveFileId'
+    ]);
+
+    const [data, total] = await qb.getManyAndCount();
+
+    return {
+      data,
+      total,
+      hasMore: skip + data.length < total,
+    };
   }
 
   async findOne(id: string, user?: AuthUser): Promise<Video> {

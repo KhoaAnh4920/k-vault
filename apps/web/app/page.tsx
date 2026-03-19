@@ -1,15 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { videoApi, type Video } from "@/lib/api";
+import { videoApi, type Video, type PaginatedVideos } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Film } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Film, Search, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { useInView } from "react-intersection-observer";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
+import { VideoCard } from "@/components/VideoCard";
 
-const POLL_INTERVAL = 5000;
 
 const CATEGORY_LABELS: Record<string, string> = {
   entertainment: "Entertainment",
@@ -20,9 +30,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   tech: "Tech",
   other: "Other",
 };
-
-import { Card, CardContent } from "@/components/ui/card";
-import { VideoCard } from "@/components/VideoCard";
 
 function SkeletonCard() {
   return (
@@ -42,47 +49,121 @@ export default function HomePage() {
   const isAdmin = (session?.user?.roles ?? []).includes("admin");
 
   const [videos, setVideos] = useState<Video[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [fetchingMore, setFetchingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState<string | undefined>(
-    undefined,
+
+  // Filters
+  const [activeCategory, setActiveCategory] = useState<string | undefined>(undefined);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [sortBy, setSortBy] = useState("newest"); // 'newest', 'oldest', 'views'
+
+  // Pagination
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+
+  // Unique categories extracted locally for the filter bar
+  // (In a real scalable app, this might come from a distinct backend endpoint)
+  const availableCategories = Object.keys(CATEGORY_LABELS);
+
+  const { ref, inView } = useInView({ threshold: 0.1 });
+
+  // Debounce search input
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedSearch(searchQuery), 400);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Main fetch function
+  const fetchVideos = useCallback(
+    async (
+      pageNum: number,
+      cat: string | undefined,
+      search: string,
+      sort: string,
+      isInitial: boolean
+    ) => {
+      if (isInitial) setLoading(true);
+      else setFetchingMore(true);
+
+      try {
+        const res: PaginatedVideos = await videoApi.list({
+          page: pageNum,
+          limit: 12,
+          category: cat,
+          search: search || undefined,
+          sort: sort,
+        });
+
+        if (isInitial) {
+          setVideos(res.data);
+        } else {
+          setVideos((prev) => {
+            // Deduplicate to avoid React keys clashing
+            const existingIds = new Set(prev.map((v) => v.id));
+            const newVideos = res.data.filter((v) => !existingIds.has(v.id));
+            return [...prev, ...newVideos];
+          });
+        }
+        setTotalCount(res.total);
+        setHasMore(res.hasMore);
+        setError(null);
+      } catch {
+        setError("Failed to load videos. Is the backend running?");
+      } finally {
+        if (isInitial) setLoading(false);
+        setFetchingMore(false);
+      }
+    },
+    []
   );
 
-  const availableCategories = Array.from(
-    new Set(videos.map((v) => v.category).filter(Boolean)),
-  ) as string[];
+  // Reset pagination on filter changes
+  useEffect(() => {
+    setPage(1);
+    void fetchVideos(1, activeCategory, debouncedSearch, sortBy, true);
+  }, [activeCategory, debouncedSearch, sortBy, fetchVideos]);
 
-  const fetchVideos = async (category?: string) => {
-    try {
-      const data = await videoApi.list(category);
-      setVideos(data);
-      setError(null);
-    } catch {
-      setError("Failed to load videos. Is the backend running?");
-    } finally {
-      setLoading(false);
+  // Trigger next page on scroll
+  useEffect(() => {
+    if (inView && hasMore && !loading && !fetchingMore) {
+      const next = page + 1;
+      setPage(next);
+      void fetchVideos(next, activeCategory, debouncedSearch, sortBy, false);
     }
-  };
+  }, [
+    inView,
+    hasMore,
+    loading,
+    fetchingMore,
+    page,
+    activeCategory,
+    debouncedSearch,
+    sortBy,
+    fetchVideos,
+  ]);
+
+  // Real-time Video Status SSE
+  useEffect(() => {
+    const abortCtrl = new AbortController();
+    
+    void videoApi.subscribeToEvents((data) => {
+      setVideos((prev) =>
+        prev.map((v) =>
+          v.id === data.videoId ? { ...v, status: data.status } : v
+        )
+      );
+    }, abortCtrl.signal).catch(console.error);
+
+    return () => abortCtrl.abort();
+  }, []);
 
   const handleDeleted = (id: string) => {
     setVideos((prev) => prev.filter((v) => v.id !== id));
+    setTotalCount((c) => c - 1);
   };
-
-  const handleCategoryChange = (cat: string | undefined) => {
-    setActiveCategory(cat);
-    setLoading(true);
-    void fetchVideos(cat);
-  };
-
-  useEffect(() => {
-    void fetchVideos();
-    const interval = setInterval(
-      () => void fetchVideos(activeCategory),
-      POLL_INTERVAL,
-    );
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const hasProcessing = videos.some((v) => v.status === "processing");
 
@@ -97,32 +178,62 @@ export default function HomePage() {
         <p className="text-lg text-muted-foreground m-0 max-w-2xl font-medium">
           {loading
             ? "Loading your collection..."
-            : `You have ${videos.length} video${videos.length !== 1 ? "s" : ""} in your vault.${hasProcessing ? " Transcoding is currently in progress." : ""}`}
+            : `You have ${totalCount} video${totalCount !== 1 ? "s" : ""} in your vault.${hasProcessing ? " Transcoding is currently in progress." : ""}`}
         </p>
       </div>
 
-      {/* Category filter chips */}
-      {(availableCategories.length > 0 || activeCategory) && (
-        <div className="flex gap-2.5 flex-wrap mb-10">
-          <Button
-            variant={!activeCategory ? "default" : "secondary"}
-            className={cn("rounded-full text-[13px] h-9 px-5 transition-all shadow-sm", !activeCategory && "shadow-primary/20")}
-            onClick={() => handleCategoryChange(undefined)}
-          >
-            All
-          </Button>
-          {availableCategories.map((cat) => (
-            <Button
-              key={cat}
-              variant={activeCategory === cat ? "default" : "secondary"}
-              className={cn("rounded-full text-[13px] h-9 px-5 transition-all shadow-sm", activeCategory === cat && "shadow-primary/20")}
-              onClick={() => handleCategoryChange(cat)}
-            >
-              {CATEGORY_LABELS[cat] ?? cat}
-            </Button>
-          ))}
+      {/* Toolbar: Search & Sort */}
+      <div className="flex flex-col sm:flex-row gap-4 mb-8">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Search videos..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 bg-background/50 backdrop-blur-sm border-border/50 h-11 shadow-sm rounded-full"
+          />
         </div>
-      )}
+        <div className="w-full sm:w-48">
+          <Select value={sortBy} onValueChange={(val) => { if (val) setSortBy(val); }}>
+            <SelectTrigger className="h-11 rounded-full bg-background/50 backdrop-blur-sm border-border/50 shadow-sm">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">Newest First</SelectItem>
+              <SelectItem value="oldest">Oldest First</SelectItem>
+              <SelectItem value="views">Most Viewed</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Category filter chips */}
+      <div className="flex gap-2.5 flex-wrap mb-10 overflow-x-auto pb-2 scrollbar-none">
+        <Button
+          variant={!activeCategory ? "default" : "secondary"}
+          className={cn(
+            "rounded-full text-[13px] h-9 px-5 transition-all shadow-sm shrink-0",
+            !activeCategory && "shadow-primary/20"
+          )}
+          onClick={() => setActiveCategory(undefined)}
+        >
+          All
+        </Button>
+        {availableCategories.map((cat) => (
+          <Button
+            key={cat}
+            variant={activeCategory === cat ? "default" : "secondary"}
+            className={cn(
+              "rounded-full text-[13px] h-9 px-5 transition-all shadow-sm shrink-0",
+              activeCategory === cat && "shadow-primary/20"
+            )}
+            onClick={() => setActiveCategory(cat)}
+          >
+            {CATEGORY_LABELS[cat] ?? cat}
+          </Button>
+        ))}
+      </div>
 
       {/* Error */}
       {error && (
@@ -144,27 +255,46 @@ export default function HomePage() {
           <div className="w-24 h-24 bg-muted/30 rounded-full flex items-center justify-center mb-6 ring-1 ring-border shadow-inner">
             <Film className="w-10 h-10 text-muted-foreground" />
           </div>
-          <h2 className="text-2xl font-bold text-foreground mb-3 tracking-tight">Your vault is empty</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-3 tracking-tight">
+            {searchQuery ? "No matches found" : "Your vault is empty"}
+          </h2>
           <p className="text-muted-foreground mb-8 text-center leading-relaxed">
-            Upload your first video to start building your personal streaming collection.
+            {searchQuery
+              ? `Try adjusting your search or filters to find what you're looking for.`
+              : `Upload your first video to start building your personal streaming collection.`}
           </p>
-          {isAdmin && (
-            <Link href="/upload" className={cn(buttonVariants({ size: "lg" }), "rounded-full shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 transition-all")}>
+          {isAdmin && !searchQuery && (
+            <Link
+              href="/upload"
+              className={cn(
+                buttonVariants({ size: "lg" }),
+                "rounded-full shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 transition-all"
+              )}
+            >
               Upload New Video
             </Link>
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
-          {videos.map((v) => (
-            <VideoCard
-              key={v.id}
-              video={v}
-              onDeleted={() => handleDeleted(v.id)}
-              isAdmin={isAdmin}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
+            {videos.map((v) => (
+              <VideoCard
+                key={v.id}
+                video={v}
+                onDeleted={() => handleDeleted(v.id)}
+                isAdmin={isAdmin}
+              />
+            ))}
+          </div>
+
+          {/* Infinite Scroll Trigger & Spinner */}
+          {(hasMore || fetchingMore) && (
+            <div ref={ref} className="mt-12 py-8 flex justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-primary opacity-50" />
+            </div>
+          )}
+        </>
       )}
     </div>
   );

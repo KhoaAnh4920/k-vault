@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
-import { Loader2, AlertCircle, MoreVertical, Trash2, Eye } from "lucide-react";
-import { videoApi, type Video } from "@/lib/api";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
+import { Card, CardContent } from "@/components/ui/card";
+import { videoApi, type Video } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { AlertCircle, Eye, Loader2, MoreVertical, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import {
   DropdownMenu,
@@ -15,18 +15,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 
 function StatusBadge({ status }: { status: Video["status"] }) {
   const map: Record<
@@ -61,7 +49,10 @@ function StatusBadge({ status }: { status: Video["status"] }) {
   return (
     <Badge
       variant={variant}
-      className={cn("gap-1.5 uppercase font-semibold text-[10px] tracking-wider", cls)}
+      className={cn(
+        "gap-1.5 uppercase font-semibold text-[10px] tracking-wider",
+        cls,
+      )}
     >
       <span>{dot}</span> {label}
     </Badge>
@@ -101,7 +92,11 @@ export function VideoCard({
       if (historyStr) {
         const history = JSON.parse(historyStr);
         const entry = history.find((h: any) => h.videoId === video.id);
-        if (entry && video.durationSeconds && entry.progress < video.durationSeconds - 5) {
+        if (
+          entry &&
+          video.durationSeconds &&
+          entry.progress < video.durationSeconds - 5
+        ) {
           setProgress((entry.progress / video.durationSeconds) * 100);
         }
       }
@@ -111,6 +106,7 @@ export function VideoCard({
   }, [video.id, video.durationSeconds]);
 
   const handleDelete = async () => {
+    console.log("Run handleDelete");
     if (deleting) return;
     setDeleting(true);
     try {
@@ -127,7 +123,10 @@ export function VideoCard({
 
   return (
     <Card className="overflow-hidden h-full flex flex-col group hover:-translate-y-1.5 hover:shadow-xl hover:shadow-primary/5 hover:border-border/80 transition-all duration-300 bg-card border-border/40 relative">
-      <Link href={video.status === "ready" ? `/watch/${video.id}` : "#"} className="flex flex-col flex-1">
+      <Link
+        href={video.status === "ready" ? `/watch/${video.id}` : "#"}
+        className="flex flex-col flex-1"
+      >
         {/* Thumbnail */}
         <div className="relative aspect-video bg-gradient-to-br from-card to-background border-b border-border/40 flex items-center justify-center overflow-hidden">
           {video.status === "ready" && (
@@ -158,8 +157,8 @@ export function VideoCard({
             </div>
           )}
 
-           {/* Progress Bar (Bottom Edge of Thumbnail) */}
-           {progress > 0 && (
+          {/* Progress Bar (Bottom Edge of Thumbnail) */}
+          {progress > 0 && (
             <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20 z-20">
               <div
                 className="h-full bg-red-600"
@@ -180,7 +179,9 @@ export function VideoCard({
               <Eye className="w-3.5 h-3.5 mr-1.5" />
               <span>
                 {video.views > 0
-                  ? new Intl.NumberFormat("en-US", { notation: "compact" }).format(video.views) + " views"
+                  ? new Intl.NumberFormat("en-US", {
+                      notation: "compact",
+                    }).format(video.views) + " views"
                   : "No views yet"}
               </span>
               <span className="mx-2 text-muted-foreground/30">•</span>
@@ -215,37 +216,13 @@ export function VideoCard({
               )}
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
-              <AlertDialog>
-                <AlertDialogTrigger
-                  render={
-                    <DropdownMenuItem
-                      className="text-destructive focus:bg-destructive/10 focus:text-destructive cursor-pointer"
-                      onClick={(e) => e.preventDefault()}
-                    />
-                  }
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  <span>Delete</span>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This action cannot be undone. This will permanently delete the video
-                      files from storage and remove the database record.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDelete}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <DropdownMenuItem
+                className="text-destructive focus:bg-destructive/10 focus:text-destructive cursor-pointer"
+                onClick={handleDelete}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                <span>Delete</span>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

@@ -17,8 +17,9 @@ import { Role } from '../auth/roles.decorator';
 const QUALITY_META: Record<string, { bandwidth: number; resolution: string }> =
   {
     '1080p': { bandwidth: 5200000, resolution: '1920x1080' },
-    '480p': { bandwidth: 2128000, resolution: '854x480' },
-    '320p': { bandwidth: 896000, resolution: '568x320' },
+    '720p': { bandwidth: 2928000, resolution: '1280x720' },
+    '480p': { bandwidth: 1528000, resolution: '854x480' },
+    '360p': { bandwidth: 896000, resolution: '640x360' },
   };
 
 @Injectable()

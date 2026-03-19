@@ -62,9 +62,13 @@ function parseRedisUrl(rawUrl: string): {
   };
 }
 
+import { Redis } from "ioredis";
+
 const redisConnection = parseRedisUrl(
   process.env.REDIS_URL ?? "redis://localhost:6379",
 );
+
+const pubClient = new Redis(redisConnection);
 
 interface TranscodeJobData {
   videoId: string;
@@ -186,9 +190,11 @@ async function processJob(
     }
 
     console.log(`✅ [Job ${job.id}] Video ${videoId} is READY\n`);
+    await pubClient.publish("video.status_changed", JSON.stringify({ videoId, status: "ready" }));
   } catch (err) {
     console.error(`❌ [Job ${job.id}] Failed:`, err);
     await updateVideoStatus(pool, videoId, "error").catch(console.error);
+    await pubClient.publish("video.status_changed", JSON.stringify({ videoId, status: "error" })).catch(console.error);
     throw err;
   } finally {
     if (fs.existsSync(jobDir)) {
@@ -203,7 +209,7 @@ const workers = contexts.map(
     new Worker<TranscodeJobData>(
       ctx.queueName,
       (job) => processJob(job, ctx.pool, ctx.driveFolderId),
-      { connection: redisConnection, concurrency: 1 },
+      { connection: redisConnection, concurrency: 1, lockDuration: 600 * 1000 }, // 10 minutes
     ),
 );
 

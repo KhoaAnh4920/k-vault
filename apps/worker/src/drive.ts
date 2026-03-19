@@ -36,23 +36,47 @@ export async function uploadFile(
   fileName: string,
   mimeType: string,
   parentFolderId?: string,
+  retries = 5,
 ): Promise<string> {
   const folder = parentFolderId ?? process.env.GOOGLE_DRIVE_FOLDER_ID;
 
-  const res = await drive.files.create({
-    requestBody: {
-      name: fileName,
-      parents: folder ? [folder] : undefined,
-    },
-    media: {
-      mimeType,
-      body: fs.createReadStream(localPath),
-    },
-    fields: "id",
-  });
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await drive.files.create({
+        requestBody: {
+          name: fileName,
+          parents: folder ? [folder] : undefined,
+        },
+        media: {
+          mimeType,
+          body: fs.createReadStream(localPath),
+        },
+        fields: "id",
+      });
 
-  if (!res.data.id) throw new Error(`Upload failed for ${fileName}`);
-  return res.data.id;
+      if (!res.data.id) throw new Error(`Upload failed for ${fileName}`);
+      return res.data.id;
+    } catch (err: any) {
+      const isRateLimit =
+        err?.errors?.some?.((e: any) => e.reason === "userRateLimitExceeded") ||
+        err?.code === 403 ||
+        err?.status === 403;
+
+      if (attempt < retries && isRateLimit) {
+        // Exponential backoff with jitter: 2s, 4s, 8s, 16s, 32s
+        const delay = Math.pow(2, attempt + 1) * 1000 + Math.random() * 1000;
+        console.warn(
+          `  ⚠️ Rate limit hit for ${fileName}. Retrying in ${Math.round(
+            delay,
+          )}ms...`,
+        );
+        await new Promise((res) => setTimeout(res, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw new Error(`Exhausted retries for ${fileName}`);
 }
 
 /**
@@ -154,7 +178,7 @@ export async function uploadHlsDirectory(
       `  ☁️  Uploading ${tsFiles.length} segments for ${quality.name}...`,
     );
 
-    const batchSize = 5;
+    const batchSize = 2;
     for (let i = 0; i < tsFiles.length; i += batchSize) {
       const batch = tsFiles.slice(i, i + batchSize);
       const results = await Promise.all(

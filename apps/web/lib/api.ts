@@ -96,10 +96,22 @@ export async function uploadFileInChunks(
   onProgress(100);
 }
 
+export interface PaginatedVideos {
+  data: Video[];
+  hasMore: boolean;
+  total: number;
+}
+
 export const videoApi = {
-  list: (category?: string) =>
+  list: (params?: {
+    category?: string;
+    page?: number;
+    limit?: number;
+    search?: string;
+    sort?: string;
+  }) =>
     api
-      .get<Video[]>("/videos", { params: category ? { category } : undefined })
+      .get<PaginatedVideos>("/videos", { params })
       .then((r) => r.data),
 
   get: (id: string) => api.get<Video>(`/videos/${id}`).then((r) => r.data),
@@ -129,6 +141,39 @@ export const videoApi = {
    * for <img> tags.
    */
   getThumbnailUrl: (videoId: string) => `/api/thumbnail/${videoId}`,
+
+  subscribeToEvents: async (
+    onMessage: (data: { videoId: string; status: "ready" | "error" }) => void,
+    signal: AbortSignal,
+  ) => {
+    const { fetchEventSource } = await import("@microsoft/fetch-event-source");
+    const session = await getSession();
+    return fetchEventSource(`${API_BASE}/videos/events`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${session?.access_token || ""}`,
+        Accept: "text/event-stream",
+      },
+      signal,
+      async onopen(response) {
+        if (response.ok && response.headers.get('content-type')?.includes('text/event-stream')) {
+          return; // everything's good
+        }
+      },
+      onmessage(ev) {
+        if (ev.data) {
+          try {
+            onMessage(JSON.parse(ev.data));
+          } catch (e) {
+            console.error("Failed to parse SSE", e);
+          }
+        }
+      },
+      onerror(err) {
+        throw err;
+      }
+    });
+  },
 };
 
 export default api;

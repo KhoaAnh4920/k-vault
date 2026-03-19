@@ -22,8 +22,16 @@ export class VideoService {
     return this.commandService.create(dto, ownerId);
   }
 
-  async findAll(category?: string, user?: AuthUser): Promise<Video[]> {
-    return this.queryService.findAll(category, user);
+  async findAll(
+    category?: string,
+    user?: AuthUser,
+    page?: number,
+    limit?: number,
+    search?: string,
+    sortBy?: string,
+    sortOrder?: 'ASC' | 'DESC',
+  ): Promise<{ data: Video[]; hasMore: boolean; total: number }> {
+    return this.queryService.findAll(category, user, page, limit, search, sortBy, sortOrder);
   }
 
   async findOne(id: string, user?: AuthUser): Promise<Video> {
