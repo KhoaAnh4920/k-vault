@@ -65,8 +65,14 @@ function DescriptionWithTimestamps({
 export default function WatchPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const accessToken = session?.access_token ?? null;
+
+  // Always hold the latest token in a ref so xhrSetup never captures a stale value
+  const tokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    tokenRef.current = accessToken;
+  }, [accessToken]);
 
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,6 +110,7 @@ export default function WatchPage() {
   }, [id, router]);
 
   // Provide Auth Token to HLS.js
+  // Reads from tokenRef so the closure never goes stale — token always current.
   const handleProviderChange = useCallback(
     (
       provider: Parameters<
@@ -112,15 +119,16 @@ export default function WatchPage() {
         >
       >[0],
     ) => {
-      if (isHLSProvider(provider) && accessToken) {
+      if (isHLSProvider(provider)) {
         provider.config = {
           xhrSetup: (xhr: XMLHttpRequest) => {
-            xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+            const token = tokenRef.current;
+            if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
           },
         };
       }
     },
-    [accessToken],
+    [], // no dependency on accessToken — reads from tokenRef
   );
 
   // Track playback time safely (throttled locally, saved globally)
@@ -185,27 +193,39 @@ export default function WatchPage() {
 
       {video.status === "ready" ? (
         <div className="mb-8 rounded-xl overflow-hidden shadow-2xl shadow-black/80 bg-black">
-          <MediaPlayer
-            ref={playerRef}
-            title={video.title}
-            src={{
-              src: videoApi.getPlaylistUrl(id),
-              type: "application/x-mpegurl",
-            }}
-            poster={videoApi.getThumbnailUrl(id)}
-            currentTime={startTime}
-            onTimeUpdate={handleTimeUpdate}
-            playsInline
-            onProviderChange={handleProviderChange}
-            onError={() =>
-              setPlayerError("Playback failed. Please try reloading the page.")
-            }
-          >
-            <MediaProvider />
-            {/* Vidstack DefaultLayout automatically converts to Mobile Layout on narrow screens
+          {/* Wait for session to be resolved before mounting HLS player.
+              If the player mounts while accessToken is null, HLS.js fires
+              onProviderChange before the token is available and all segment
+              requests go out without Authorization → 401 → buffer holes. */}
+          {sessionStatus === "loading" || !accessToken ? (
+            <div className="aspect-video flex items-center justify-center">
+              <Loader2 className="w-10 h-10 animate-spin text-primary" />
+            </div>
+          ) : (
+            <MediaPlayer
+              ref={playerRef}
+              title={video.title}
+              src={{
+                src: videoApi.getPlaylistUrl(id),
+                type: "application/x-mpegurl",
+              }}
+              poster={videoApi.getThumbnailUrl(id)}
+              currentTime={startTime}
+              onTimeUpdate={handleTimeUpdate}
+              playsInline
+              onProviderChange={handleProviderChange}
+              onError={() =>
+                setPlayerError(
+                  "Playback failed. Please try reloading the page.",
+                )
+              }
+            >
+              <MediaProvider />
+              {/* Vidstack DefaultLayout automatically converts to Mobile Layout on narrow screens
                 supporting Double Tap, Gestures, Swipes intuitively */}
-            <DefaultVideoLayout icons={defaultLayoutIcons} />
-          </MediaPlayer>
+              <DefaultVideoLayout icons={defaultLayoutIcons} />
+            </MediaPlayer>
+          )}
 
           {playerError && (
             <div className="p-4 bg-destructive/10 border-t border-destructive/30 text-red-400 text-sm flex items-center gap-2">

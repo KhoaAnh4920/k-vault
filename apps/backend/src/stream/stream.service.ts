@@ -16,10 +16,8 @@ import { Role } from '../auth/roles.decorator';
 
 const QUALITY_META: Record<string, { bandwidth: number; resolution: string }> =
   {
-    '1080p': { bandwidth: 5200000, resolution: '1920x1080' },
-    '720p': { bandwidth: 2928000, resolution: '1280x720' },
-    '480p': { bandwidth: 1528000, resolution: '854x480' },
-    '360p': { bandwidth: 896000, resolution: '640x360' },
+    HD: { bandwidth: 5200000, resolution: '1920x1080' },
+    SD: { bandwidth: 1528000, resolution: '854x480' },
   };
 
 @Injectable()
@@ -71,16 +69,27 @@ export class StreamService {
       );
     }
 
+    // Compute #EXT-X-TARGETDURATION from actual segment durations (required by spec:
+    // must be >= the longest segment, rounded up to nearest integer).
+    const maxDuration = chunks.reduce(
+      (max, c) => Math.max(max, c.durationSeconds ?? 6),
+      0,
+    );
+    const targetDuration = Math.max(1, Math.ceil(maxDuration));
+
     const lines = [
       '#EXTM3U',
       '#EXT-X-VERSION:3',
-      '#EXT-X-TARGETDURATION:7',
+      `#EXT-X-TARGETDURATION:${targetDuration}`,
       '#EXT-X-MEDIA-SEQUENCE:0',
       '#EXT-X-INDEPENDENT-SEGMENTS',
     ];
 
     for (const chunk of chunks) {
-      lines.push('#EXTINF:6.0,');
+      // Use actual EXTINF duration stored at transcode time; fall back to 6s for
+      // legacy chunks that were saved before this field was added.
+      const dur = (chunk.durationSeconds ?? 6.0).toFixed(6);
+      lines.push(`#EXTINF:${dur},`);
       lines.push(`/api/stream/chunk/${chunk.driveFileId}`);
     }
 

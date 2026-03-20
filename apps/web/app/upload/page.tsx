@@ -627,12 +627,14 @@ export default function UploadPage() {
                               {(["public", "private"] as const).map((v) => (
                                 <button
                                   key={v}
-                                  onClick={() => updateItem(item.id, { visibility: v })}
+                                  onClick={() =>
+                                    updateItem(item.id, { visibility: v })
+                                  }
                                   className={cn(
                                     "flex-1 py-2.5 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all",
                                     item.visibility === v
-                                      ? "bg-primary text-white border-primary shadow-lg shadow-primary/20"
-                                      : "bg-background border-border hover:border-primary/40 text-muted-foreground"
+                                      ? "bg-primary text-black border-primary shadow-lg shadow-primary/20"
+                                      : "bg-background border-border hover:border-primary/40 text-muted-foreground",
                                   )}
                                 >
                                   {v}
@@ -655,12 +657,15 @@ export default function UploadPage() {
                                 onClick={async () => {
                                   if (!item.videoId) return;
                                   try {
-                                    await videoApi.updateMetadata(item.videoId, {
-                                      title: item.title,
-                                      description: item.description,
-                                      category: item.category,
-                                      visibility: item.visibility,
-                                    });
+                                    await videoApi.updateMetadata(
+                                      item.videoId,
+                                      {
+                                        title: item.title,
+                                        description: item.description,
+                                        category: item.category,
+                                        visibility: item.visibility,
+                                      },
+                                    );
                                     updateItem(item.id, { expanded: false });
                                     // toast.success("Video updated");
                                   } catch (err) {

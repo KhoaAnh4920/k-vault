@@ -14,10 +14,8 @@ export interface QualityPreset {
 }
 
 export const ALL_QUALITY_PRESETS: QualityPreset[] = [
-  { name: "1080p", height: 1080, videoBitrate: "5000k", audioBitrate: "192k" },
-  { name: "720p", height: 720, videoBitrate: "2800k", audioBitrate: "128k" },
-  { name: "480p", height: 480, videoBitrate: "1400k", audioBitrate: "128k" },
-  { name: "360p", height: 360, videoBitrate: "800k", audioBitrate: "96k" },
+  { name: "HD", height: 1080, videoBitrate: "5000k", audioBitrate: "192k" },
+  { name: "SD", height: 480, videoBitrate: "1400k", audioBitrate: "128k" },
 ];
 
 export interface VideoInfo {
@@ -43,27 +41,29 @@ export function getVideoInfo(inputPath: string): Promise<VideoInfo> {
 }
 
 /**
- * Returns the quality presets applicable to the given source video info.
- * Uses the larger dimension (width or height) to classify resolution.
- * Only presets whose target height ≤ source max dimension are included.
- * Always returns at least the lowest preset.
+ * Returns the quality tiers to transcode for the given source.
+ * - SD (480p) is always included.
+ * - HD is included only if the source is at least 720p tall (or wide).
+ *   HD height adapts: 1080p when source ≥ 1080p, otherwise 720p.
  */
 export function selectQualities(info: VideoInfo): QualityPreset[] {
   const maxDim = Math.max(info.width, info.height);
+  const tiers: QualityPreset[] = [
+    ALL_QUALITY_PRESETS.find((q) => q.name === "SD")!,
+  ];
 
-  // We map the incoming video to standard tiers.
-  // Thresholds use standard widths (1920, 1280, 854) to be safe.
-  const applicable = ALL_QUALITY_PRESETS.filter((q) => {
-    if (q.name === "1080p") return maxDim >= 1900;
-    if (q.name === "720p") return maxDim >= 1200;
-    if (q.name === "480p") return maxDim >= 800;
-    if (q.name === "360p") return true; // Always available as fallback
-    return q.height <= maxDim;
-  });
+  if (maxDim >= 720) {
+    const hdHeight = maxDim >= 1080 ? 1080 : 720;
+    const hdBitrate = hdHeight === 1080 ? "5000k" : "2800k";
+    tiers.unshift({
+      name: "HD",
+      height: hdHeight,
+      videoBitrate: hdBitrate,
+      audioBitrate: "192k",
+    });
+  }
 
-  return applicable.length > 0
-    ? applicable
-    : [ALL_QUALITY_PRESETS[ALL_QUALITY_PRESETS.length - 1]!];
+  return tiers;
 }
 
 export interface TranscodeResult {
@@ -177,6 +177,8 @@ async function transcodeQuality(
         quality.videoBitrate,
         "-b:a",
         quality.audioBitrate,
+        "-force_key_frames",
+        `expr:gte(t,n_forced*${segmentTime})`,
         "-hls_time",
         segmentTime.toString(),
         "-hls_list_size",
@@ -184,7 +186,7 @@ async function transcodeQuality(
         "-hls_segment_filename",
         path.join(outputDir, "segment%03d.ts"),
         "-hls_flags",
-        "independent_segments+temp_file",
+        "independent_segments",
         "-f",
         "hls",
       ])
@@ -246,6 +248,10 @@ async function transcodeQualitySoftware(
         quality.videoBitrate,
         "-b:a",
         quality.audioBitrate,
+        "-force_key_frames",
+        `expr:gte(t,n_forced*${segmentTime})`,
+        "-sc_threshold",
+        "0",
         "-hls_time",
         segmentTime.toString(),
         "-hls_list_size",
@@ -253,7 +259,7 @@ async function transcodeQualitySoftware(
         "-hls_segment_filename",
         path.join(outputDir, "segment%03d.ts"),
         "-hls_flags",
-        "independent_segments+temp_file",
+        "independent_segments",
         "-f",
         "hls",
       ])
@@ -278,4 +284,34 @@ function parseDuration(duration: string): number {
     return parts[0]! * 3600 + parts[1]! * 60 + parts[2]!;
   }
   return 0;
+}
+
+/**
+ * Parses the FFmpeg-generated per-quality playlist.m3u8 and returns
+ * a map of segment filename → actual EXTINF duration in seconds.
+ * This is the ground truth that must be used in the backend playlist.
+ */
+export function parsePlaylistDurations(
+  playlistPath: string,
+): Map<string, number> {
+  const content = fs.readFileSync(playlistPath, "utf-8");
+  const lines = content
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const durations = new Map<string, number>();
+
+  for (let i = 0; i < lines.length - 1; i++) {
+    const line = lines[i]!;
+    if (line.startsWith("#EXTINF:")) {
+      const commaIdx = line.indexOf(",");
+      const duration = parseFloat(line.slice("#EXTINF:".length, commaIdx));
+      const filename = path.basename(lines[i + 1]!);
+      if (!filename.startsWith("#") && filename.endsWith(".ts")) {
+        durations.set(filename, duration);
+      }
+    }
+  }
+
+  return durations;
 }

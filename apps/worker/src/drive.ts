@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import { Readable } from "stream";
 import * as fs from "fs";
 import * as path from "path";
+import { parsePlaylistDurations } from "./ffmpeg";
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -177,6 +178,7 @@ export async function uploadHlsDirectory(
     driveFileId: string;
     sequence: number;
     quality: string;
+    durationSeconds: number | null;
   }>;
 }> {
   // Create a dedicated subfolder for this video
@@ -194,6 +196,7 @@ export async function uploadHlsDirectory(
     driveFileId: string;
     sequence: number;
     quality: string;
+    durationSeconds: number | null;
   }> = [];
   let totalChunks = 0;
   for (const q of qualities) {
@@ -207,6 +210,10 @@ export async function uploadHlsDirectory(
       .readdirSync(qualityDir)
       .filter((f) => f.endsWith(".ts"))
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+    // Parse actual EXTINF durations from FFmpeg's generated playlist
+    const playlistPath = path.join(qualityDir, "playlist.m3u8");
+    const segmentDurations = parsePlaylistDurations(playlistPath);
 
     console.log(
       `  ☁️  Uploading ${tsFiles.length} segments for ${quality.name}...`,
@@ -232,13 +239,16 @@ export async function uploadHlsDirectory(
             driveFileId: fileId,
             sequence,
             quality: quality.name,
+            durationSeconds: segmentDurations.get(originalFilename) ?? null,
           };
         }),
       );
       allChunks.push(...results);
       uploadedChunks += results.length;
       if (onProgress) {
-        onProgress(Math.min(99, Math.round((uploadedChunks / totalChunks) * 100)));
+        onProgress(
+          Math.min(99, Math.round((uploadedChunks / totalChunks) * 100)),
+        );
       }
     }
   }

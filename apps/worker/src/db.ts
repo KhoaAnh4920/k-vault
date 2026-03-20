@@ -65,19 +65,27 @@ export async function saveVideoChunks(
     driveFileId: string;
     sequence: number;
     quality: string;
+    durationSeconds?: number | null;
   }>,
 ): Promise<void> {
   if (chunks.length === 0) return;
 
   const values: unknown[] = [];
   const placeholders = chunks.map((c, i) => {
-    const base = i * 5;
-    values.push(videoId, c.filename, c.driveFileId, c.sequence, c.quality);
-    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+    const base = i * 6;
+    values.push(
+      videoId,
+      c.filename,
+      c.driveFileId,
+      c.sequence,
+      c.quality,
+      c.durationSeconds ?? null,
+    );
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
   });
 
   await pool.query(
-    `INSERT INTO video_chunks (video_id, filename, drive_file_id, sequence, quality) VALUES ${placeholders.join(", ")}`,
+    `INSERT INTO video_chunks (video_id, filename, drive_file_id, sequence, quality, duration_seconds) VALUES ${placeholders.join(", ")}`,
     values,
   );
 }

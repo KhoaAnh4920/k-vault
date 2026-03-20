@@ -30,7 +30,11 @@ export class VideoChunk {
   @Column({ type: 'int' })
   sequence: number;
 
-  /** Quality level: '1080p', '480p', '320p' */
+  /** Quality level e.g. 'HD', 'SD' */
   @Column({ type: 'varchar', length: 10, nullable: true, name: 'quality' })
   quality: string | null;
+
+  /** Actual segment duration in seconds as declared by FFmpeg (#EXTINF value) */
+  @Column({ type: 'float', nullable: true, name: 'duration_seconds' })
+  durationSeconds: number | null;
 }
