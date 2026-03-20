@@ -177,8 +177,6 @@ async function transcodeQuality(
         quality.videoBitrate,
         "-b:a",
         quality.audioBitrate,
-        "-force_key_frames",
-        `expr:gte(t,n_forced*${segmentTime})`,
         "-hls_time",
         segmentTime.toString(),
         "-hls_list_size",
