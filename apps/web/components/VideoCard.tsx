@@ -4,7 +4,8 @@ import { Badge } from "./ui/badge";
 import { Card, CardContent } from "./ui/card";
 import { videoApi, type Video } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { AlertCircle, Eye, Globe, Loader2, Lock, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { generateThumbnailsFromUrl } from "@/lib/video-utils";
+import { AlertCircle, Eye, Globe, Loader2, Lock, MoreVertical, Pencil, Trash2, ImagePlus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -121,6 +122,40 @@ export function VideoCard({
   });
   const [savingEdit, setSavingEdit] = useState(false);
 
+  const [extractedThumbs, setExtractedThumbs] = useState<string[]>([]);
+  const [extractingThumbs, setExtractingThumbs] = useState(false);
+  const [selectedThumb, setSelectedThumb] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isEditDialogOpen && video.status === "ready" && extractedThumbs.length === 0) {
+      setExtractingThumbs(true);
+      generateThumbnailsFromUrl(videoApi.getPlaylistUrl(video.id), 10)
+        .then((thumbs) => setExtractedThumbs(thumbs))
+        .catch((err) => {
+          console.error("Failed to extract thumbs", err);
+        })
+        .finally(() => setExtractingThumbs(false));
+    }
+  }, [isEditDialogOpen, video.id, video.status, extractedThumbs.length]);
+
+  const handleCustomThumbnail = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
+        setExtractedThumbs(prev => {
+          if (!prev.includes(base64)) {
+            setSelectedThumb(base64);
+            return [base64, ...prev].slice(0, 11);
+          }
+          return prev;
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const isOwner = !!(currentUserId && video.ownerId === currentUserId);
   const canModify = isAdmin || isOwner;
 
@@ -167,6 +202,7 @@ export function VideoCard({
         title: editData.title,
         category: editData.category,
         visibility: editData.visibility,
+        thumbnailBase64: selectedThumb || undefined,
       });
       toast.success("Video updated successfully");
       setIsEditDialogOpen(false);
@@ -174,6 +210,10 @@ export function VideoCard({
       video.title = editData.title;
       video.category = editData.category;
       video.visibility = editData.visibility;
+      if (selectedThumb) {
+        // Simple force reload technique for images
+        video.thumbnailDriveFileId = "updated";
+      }
     } catch (err: unknown) {
       console.error("Update error:", err);
       toast.error("Failed to update video");
@@ -193,7 +233,7 @@ export function VideoCard({
           {video.status === "ready" && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={videoApi.getThumbnailUrl(video.id)}
+              src={`${videoApi.getThumbnailUrl(video.id)}?t=${video.thumbnailDriveFileId || ""}`}
               alt=""
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
@@ -305,6 +345,49 @@ export function VideoCard({
             <DialogTitle>Edit Video Details</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            {video.status === "ready" && (
+              <div className="grid gap-2">
+                <div className="flex items-center justify-between">
+                  <Label>Thumbnail</Label>
+                  <label className="text-xs text-primary hover:underline cursor-pointer flex items-center gap-1">
+                    <ImagePlus className="w-3 h-3" />
+                    Custom Thumbnail
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleCustomThumbnail}
+                    />
+                  </label>
+                </div>
+                {extractingThumbs && extractedThumbs.length === 0 ? (
+                  <div className="flex items-center justify-center p-8 bg-muted/50 rounded-lg border border-dashed">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-sm text-muted-foreground">Extracting frames...</span>
+                  </div>
+                ) : extractedThumbs.length > 0 ? (
+                  <div className="grid grid-cols-5 gap-2 mt-1">
+                    {extractedThumbs.map((thumb, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => setSelectedThumb(thumb)}
+                        className={cn(
+                          "relative aspect-video rounded cursor-pointer overflow-hidden border-2 transition-all",
+                          selectedThumb === thumb
+                            ? "border-primary shadow-sm"
+                            : "border-transparent hover:border-border/80"
+                        )}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={thumb} alt={`Frame ${idx}`} className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground italic">Thumbnail extraction not available.</div>
+                )}
+              </div>
+            )}
             <div className="grid gap-2">
               <Label htmlFor="title">Title</Label>
               <Input

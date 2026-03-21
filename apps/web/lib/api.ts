@@ -48,6 +48,9 @@ export interface Video {
   ownerId: string | null;
   createdAt: string;
   updatedAt: string;
+  thumbnailDriveFileId?: string | null;
+  progress?: number;
+  detail?: string;
 }
 
 export interface InitUploadResponse {
@@ -142,7 +145,7 @@ export const videoApi = {
       description?: string;
       category?: string;
       visibility?: "public" | "private";
-      thumbnailDriveFileId?: string;
+      thumbnailBase64?: string;
     },
   ) => api.patch<Video>(`/videos/${id}`, payload).then((r) => r.data),
 

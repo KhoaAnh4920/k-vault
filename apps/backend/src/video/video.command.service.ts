@@ -47,24 +47,31 @@ export class VideoCommandService {
     return result;
   }
 
+  private async uploadThumbnailFromBase64(
+    base64: string,
+    parentFolderId?: string,
+  ): Promise<string> {
+    const base64Data = base64.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+    const stream = new Readable();
+    stream.push(buffer);
+    stream.push(null);
+
+    return this.storage.uploadFromStream(stream, {
+      name: `thumb_${Date.now()}.jpg`,
+      mimeType: 'image/jpeg',
+      parentFolderId,
+    });
+  }
+
   async create(dto: CreateVideoDto, ownerId: string): Promise<Video> {
     let thumbnailDriveFileId: string | null = null;
 
     if (dto.thumbnailBase64) {
       try {
-        const base64Data = dto.thumbnailBase64.replace(
-          /^data:image\/\w+;base64,/,
-          '',
+        thumbnailDriveFileId = await this.uploadThumbnailFromBase64(
+          dto.thumbnailBase64,
         );
-        const buffer = Buffer.from(base64Data, 'base64');
-        const stream = new Readable();
-        stream.push(buffer);
-        stream.push(null);
-
-        thumbnailDriveFileId = await this.storage.uploadFromStream(stream, {
-          name: `thumb_${Date.now()}.jpg`,
-          mimeType: 'image/jpeg',
-        });
         this.logger.log(
           `Thumbnail uploaded for new video: ${thumbnailDriveFileId}`,
         );
@@ -96,7 +103,7 @@ export class VideoCommandService {
         thumbnailDriveFileId: saved.thumbnailDriveFileId,
       },
       {
-        jobId: saved.id, // Set jobId to videoId for easy removal on delete
+        jobId: saved.id,
         attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },
       },
@@ -137,14 +144,35 @@ export class VideoCommandService {
       );
     }
 
-    // Update only provided fields
+    // Process new thumbnail
+    if (dto.thumbnailBase64) {
+      try {
+        const newFileId = await this.uploadThumbnailFromBase64(
+          dto.thumbnailBase64,
+          video.hlsFolderDriveId || undefined,
+        );
+
+        // Delete old thumbnail if exists
+        if (video.thumbnailDriveFileId) {
+          try {
+            await this.storage.deleteFile(video.thumbnailDriveFileId);
+          } catch (delErr) {
+            this.logger.warn(`Failed to delete old thumbnail: ${(delErr as Error).message}`);
+          }
+        }
+
+        video.thumbnailDriveFileId = newFileId;
+        this.logger.log(`Thumbnail updated for video ${id}`);
+      } catch (err) {
+        this.logger.error(`Failed to update thumbnail: ${(err as Error).message}`);
+      }
+    }
+
+    // Update other fields
     if (dto.title !== undefined) video.title = dto.title;
     if (dto.description !== undefined) video.description = dto.description;
     if (dto.category !== undefined) video.category = dto.category;
     if (dto.visibility !== undefined) video.visibility = dto.visibility;
-    if (dto.thumbnailDriveFileId !== undefined) {
-      video.thumbnailDriveFileId = dto.thumbnailDriveFileId;
-    }
 
     return this.videoRepo.save(video);
   }

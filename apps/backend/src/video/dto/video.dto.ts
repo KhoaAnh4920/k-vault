@@ -49,6 +49,10 @@ export class UpdateVideoMetadataDto {
   @IsString()
   @IsOptional()
   thumbnailDriveFileId?: string;
+
+  @IsString()
+  @IsOptional()
+  thumbnailBase64?: string;
 }
 
 export class InitUploadDto {

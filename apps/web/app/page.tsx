@@ -85,9 +85,14 @@ export default function HomePage() {
       search: string,
       sort: string,
       isInitial: boolean,
+      isPullToRefresh = false,
     ) => {
-      if (isInitial) setLoading(true);
-      else setFetchingMore(true);
+      if (isPullToRefresh) {
+      } else if (isInitial) {
+        setLoading(true);
+      } else {
+        setFetchingMore(true);
+      }
 
       try {
         const res: PaginatedVideos = await videoApi.list({
@@ -170,110 +175,199 @@ export default function HomePage() {
 
   const hasProcessing = videos.some((v) => v.status === "processing");
 
+  // --- Pull to Refresh Logic ---
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [startY, setStartY] = useState(0);
+
+  useEffect(() => {
+    document.body.style.overscrollBehaviorY = "none";
+    return () => {
+      document.body.style.overscrollBehaviorY = "auto";
+    };
+  }, []);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (window.scrollY <= 0) {
+      setStartY(e.touches[0]?.clientY || 0);
+    } else {
+      setStartY(0);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (startY === 0) return;
+    const y = e.touches[0]?.clientY || 0;
+    const delta = y - startY;
+
+    if (delta > 0 && window.scrollY <= 0) {
+      const distance = Math.min(delta * 0.4, 80);
+      setPullDistance(distance);
+    }
+  };
+
+  const handleTouchEnd = async () => {
+    if (pullDistance > 55 && !isRefreshing) {
+      setIsRefreshing(true);
+      setPullDistance(55); // Hold at target
+
+      setPage(1);
+      await fetchVideos(1, activeCategory, debouncedSearch, sortBy, true, true);
+
+      setIsRefreshing(false);
+    }
+    setPullDistance(0);
+    setStartY(0);
+  };
+
   return (
-    <div className="container mx-auto px-6 max-w-[1400px] pt-16 pb-24">
-      {/* Hero */}
-      <div className="mb-12 relative">
-        <div className="absolute inset-0 -z-10 h-full w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_50%_50%_at_0%_0%,#000_60%,transparent_100%)] opacity-[0.03]"></div>
-        <h1 className="text-5xl font-black tracking-tight mb-4 bg-gradient-to-br from-foreground via-foreground/90 to-muted-foreground bg-clip-text text-transparent">
-          Library
-        </h1>
-        <p className="text-lg text-muted-foreground m-0 max-w-2xl font-medium">
-          {loading
-            ? "Loading your collection..."
-            : `You have ${totalCount} video${totalCount !== 1 ? "s" : ""} in your vault.${hasProcessing ? " Transcoding is currently in progress." : ""}`}
-        </p>
+    <div
+      className="min-h-screen relative"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Pull to Refresh Indicator */}
+      <div
+        className="absolute top-0 left-0 right-0 flex justify-center items-center overflow-hidden z-50 pointer-events-none"
+        style={{
+          height: `${pullDistance}px`,
+          transition:
+            isRefreshing || pullDistance === 0
+              ? "height 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)"
+              : "none",
+        }}
+      >
+        <div
+          className="bg-card shadow-lg rounded-full w-10 h-10 flex items-center justify-center border border-border/50 transition-all duration-300"
+          style={{
+            transform: `rotate(${pullDistance * 5}deg)`,
+            opacity: pullDistance > 10 ? pullDistance / 50 : 0,
+          }}
+        >
+          <Loader2
+            className={cn(
+              "w-5 h-5 text-primary",
+              isRefreshing && "animate-spin",
+            )}
+          />
+        </div>
       </div>
 
-      {/* Category filter chips */}
-      <div className="flex gap-2.5 flex-wrap mb-10 overflow-x-auto pb-2 scrollbar-none">
-        <Button
-          variant={!activeCategory ? "default" : "secondary"}
-          className={cn(
-            "rounded-full text-[13px] h-9 px-5 transition-all shadow-sm shrink-0",
-            !activeCategory && "shadow-primary/20",
-          )}
-          onClick={() => setActiveCategory(undefined)}
-        >
-          All
-        </Button>
-        {availableCategories.map((cat) => (
+      {/* Main Content */}
+      <div
+        className="container mx-auto px-6 max-w-[1400px] pt-16 pb-24"
+        style={{
+          transform: `translateY(${pullDistance}px)`,
+          transition:
+            isRefreshing || pullDistance === 0
+              ? "transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)"
+              : "none",
+        }}
+      >
+        {/* Hero */}
+        <div className="mb-12 relative">
+          <div className="absolute inset-0 -z-10 h-full w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_50%_50%_at_0%_0%,#000_60%,transparent_100%)] opacity-[0.03]"></div>
+          <h1 className="text-5xl font-black tracking-tight mb-4 bg-gradient-to-br from-foreground via-foreground/90 to-muted-foreground bg-clip-text text-transparent">
+            Library
+          </h1>
+          <p className="text-lg text-muted-foreground m-0 max-w-2xl font-medium">
+            {loading
+              ? "Loading your collection..."
+              : `You have ${totalCount} video${totalCount !== 1 ? "s" : ""} in your vault.${hasProcessing ? " Transcoding is currently in progress." : ""}`}
+          </p>
+        </div>
+
+        {/* Category filter chips */}
+        <div className="flex gap-2.5 flex-wrap mb-10 overflow-x-auto pb-2 scrollbar-none">
           <Button
-            key={cat}
-            variant={activeCategory === cat ? "default" : "secondary"}
+            variant={!activeCategory ? "default" : "secondary"}
             className={cn(
               "rounded-full text-[13px] h-9 px-5 transition-all shadow-sm shrink-0",
-              activeCategory === cat && "shadow-primary/20",
+              !activeCategory && "shadow-primary/20",
             )}
-            onClick={() => setActiveCategory(cat)}
+            onClick={() => setActiveCategory(undefined)}
           >
-            {CATEGORY_LABELS[cat] ?? cat}
+            All
           </Button>
-        ))}
-      </div>
-
-      {/* Error */}
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-5 mb-8 text-red-400">
-          {error}
-        </div>
-      )}
-
-      {/* Grid */}
-      {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <SkeletonCard key={i} />
+          {availableCategories.map((cat) => (
+            <Button
+              key={cat}
+              variant={activeCategory === cat ? "default" : "secondary"}
+              className={cn(
+                "rounded-full text-[13px] h-9 px-5 transition-all shadow-sm shrink-0",
+                activeCategory === cat && "shadow-primary/20",
+              )}
+              onClick={() => setActiveCategory(cat)}
+            >
+              {CATEGORY_LABELS[cat] ?? cat}
+            </Button>
           ))}
         </div>
-      ) : videos.length === 0 ? (
-        <div className="text-center py-24 flex flex-col items-center justify-center max-w-md mx-auto relative mt-12">
-          <div className="absolute inset-0 -z-10 bg-primary/5 blur-3xl rounded-full" />
-          <div className="w-24 h-24 bg-muted/30 rounded-full flex items-center justify-center mb-6 ring-1 ring-border shadow-inner">
-            <Film className="w-10 h-10 text-muted-foreground" />
+
+        {/* Error */}
+        {error && (
+          <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-5 mb-8 text-red-400">
+            {error}
           </div>
-          <h2 className="text-2xl font-bold text-foreground mb-3 tracking-tight">
-            {searchQuery ? "No matches found" : "Your vault is empty"}
-          </h2>
-          <p className="text-muted-foreground mb-8 text-center leading-relaxed">
-            {searchQuery
-              ? `Try adjusting your search or filters to find what you're looking for.`
-              : `Upload your first video to start building your personal streaming collection.`}
-          </p>
-          {isAdmin && !searchQuery && (
-            <Link
-              href="/upload"
-              className={cn(
-                buttonVariants({ size: "lg" }),
-                "rounded-full shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 transition-all",
-              )}
-            >
-              Upload New Video
-            </Link>
-          )}
-        </div>
-      ) : (
-        <>
+        )}
+
+        {/* Grid */}
+        {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
-            {videos.map((v) => (
-              <VideoCard
-                key={v.id}
-                video={v}
-                onDeleted={() => handleDeleted(v.id)}
-                isAdmin={isAdmin}
-                currentUserId={session?.user?.id}
-              />
+            {Array.from({ length: 8 }).map((_, i) => (
+              <SkeletonCard key={i} />
             ))}
           </div>
-
-          {/* Infinite Scroll Trigger & Spinner */}
-          {(hasMore || fetchingMore) && (
-            <div ref={ref} className="mt-12 py-8 flex justify-center">
-              <Loader2 className="w-8 h-8 animate-spin text-primary opacity-50" />
+        ) : videos.length === 0 ? (
+          <div className="text-center py-24 flex flex-col items-center justify-center max-w-md mx-auto relative mt-12">
+            <div className="absolute inset-0 -z-10 bg-primary/5 blur-3xl rounded-full" />
+            <div className="w-24 h-24 bg-muted/30 rounded-full flex items-center justify-center mb-6 ring-1 ring-border shadow-inner">
+              <Film className="w-10 h-10 text-muted-foreground" />
             </div>
-          )}
-        </>
-      )}
+            <h2 className="text-2xl font-bold text-foreground mb-3 tracking-tight">
+              {searchQuery ? "No matches found" : "Your vault is empty"}
+            </h2>
+            <p className="text-muted-foreground mb-8 text-center leading-relaxed">
+              {searchQuery
+                ? `Try adjusting your search or filters to find what you're looking for.`
+                : `Upload your first video to start building your personal streaming collection.`}
+            </p>
+            {isAdmin && !searchQuery && (
+              <Link
+                href="/upload"
+                className={cn(
+                  buttonVariants({ size: "lg" }),
+                  "rounded-full shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 transition-all",
+                )}
+              >
+                Upload New Video
+              </Link>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
+              {videos.map((v) => (
+                <VideoCard
+                  key={v.id}
+                  video={v}
+                  onDeleted={() => handleDeleted(v.id)}
+                  isAdmin={isAdmin}
+                  currentUserId={session?.user?.id}
+                />
+              ))}
+            </div>
+
+            {/* Infinite Scroll Trigger & Spinner */}
+            {(hasMore || fetchingMore) && (
+              <div ref={ref} className="mt-12 py-8 flex justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-primary opacity-50" />
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
