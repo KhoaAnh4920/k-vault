@@ -15,6 +15,7 @@ import {
   selectQualities,
   transcodeToHls,
   extractThumbnail,
+  parsePlaylistDurations,
 } from "./ffmpeg";
 import {
   createPool,
@@ -171,45 +172,26 @@ async function processJob(
     await downloadFile(rawDriveFileId, rawPath);
     await checkExists("downloading");
 
-    // const sizeMb = (fs.statSync(rawPath).size / 1024 / 1024).toFixed(1);
-    // console.log(`   ✓ Downloaded ${sizeMb} MB`);
     await reportProgress(15, "Analyzing source...");
 
     // 4. Probe source to get resolution and duration
-    // console.log("🔍 Probing source video...");
     const videoInfo = await getVideoInfo(rawPath);
     const qualities = selectQualities(videoInfo);
-    /*
-    console.log(
-      `   ✓ Source: ${videoInfo.width}x${videoInfo.height}, ${videoInfo.durationSeconds.toFixed(1)}s`,
-    );
-    */
     // 4b. Intelligent Segment Timing (to control file count for long videos)
     let segmentTime = 6; // Default for < 5m
-    if (videoInfo.durationSeconds > 1800) segmentTime = 30; // > 30m
+    if (videoInfo.durationSeconds > 1800)
+      segmentTime = 30; // > 30m
     else if (videoInfo.durationSeconds > 300) segmentTime = 10; // 5m - 30m
 
-    /*
-    console.log(
-      `   ✓ Selected qualities: ${qualities.map((q) => q.name).join(", ")}`,
-    );
-    console.log(`   ✓ HLS Segment Duration: ${segmentTime}s`);
-    */
     await checkExists("probing");
     await reportProgress(25, "Transcoding to HLS...");
 
     // 5. Extract thumbnail at ~10% of duration (ONLY if not pre-selected by user)
     if (!preselectedThumbnailId) {
-      // console.log("🖼  Extracting thumbnail (Auto)...");
       const thumbnailAt = Math.min(videoInfo.durationSeconds * 0.1, 30);
       try {
         await extractThumbnail(rawPath, thumbnailPath, thumbnailAt);
-        // console.log(`   ✓ Thumbnail extracted at ${thumbnailAt.toFixed(1)}s`);
-      } catch (err) {
-        // console.warn(`   ⚠  Thumbnail extraction failed: ${(err as Error).message}`);
-      }
-    } else {
-      // console.log("🖼  Using pre-selected thumbnail provided by user.");
+      } catch (err) {}
     }
     await checkExists("thumbnailing");
 
@@ -222,7 +204,6 @@ async function processJob(
 
     // 6. Transcode & Streaming Upload
     const qualitiesSummary = qualities.map((q) => q.name).join(", ");
-    // console.log(`🎞  Transcoding to HLS: ${qualitiesSummary}...`);
     await reportProgress(25, `Transcoding all tiers: ${qualitiesSummary}...`);
 
     const allChunks: Array<{
@@ -254,6 +235,8 @@ async function processJob(
             const fKey = `${q.name}/${f}`;
             if (uploadedFiles.has(fKey)) continue;
 
+            uploadedFiles.add(fKey);
+
             // Wait if we hit the concurrency limit
             while (activeUploads.size >= MAX_CONCURRENT_UPLOADS) {
               await Promise.race(activeUploads);
@@ -280,8 +263,8 @@ async function processJob(
                   quality: q.name,
                   sequence,
                 });
-                uploadedFiles.add(fKey);
               } catch (err) {
+                uploadedFiles.delete(fKey);
                 console.warn(
                   `    ⚠️  Failed parallel upload for ${fKey}:`,
                   (err as Error).message,
@@ -333,8 +316,23 @@ async function processJob(
     ]);
 
     await checkExists("uploading");
-    // console.log(`   ✓ Transcoding & Streaming Upload completed`);
     await reportProgress(95, "Finalizing...");
+
+    for (const q of qualities) {
+      const playlistPath = path.join(hlsDir, q.name, "playlist.m3u8");
+      if (fs.existsSync(playlistPath)) {
+        const durationsMap = parsePlaylistDurations(playlistPath);
+
+        for (const chunk of allChunks) {
+          if (chunk.quality === q.name && chunk.filename.endsWith(".ts")) {
+            const actualDuration = durationsMap.get(chunk.filename);
+            if (actualDuration !== undefined) {
+              (chunk as any).durationSeconds = actualDuration;
+            }
+          }
+        }
+      }
+    }
 
     // 7. Upload Thumbnail (if generated)
     let thumbnailFileId: string | null = null;
@@ -345,7 +343,6 @@ async function processJob(
         "thumbnail.jpg",
         videoFolderId,
       ).then((r) => r.driveFileId);
-      // console.log(`   ✓ Thumbnail uploaded: ${thumbnailFileId}`);
     }
 
     // 8. Save to DB
@@ -359,16 +356,12 @@ async function processJob(
     });
 
     // 9. Delete raw source file from Drive — no longer needed after HLS upload
-    // console.log("🗑  Deleting raw source file from Drive...");
     try {
       await deleteFile(rawDriveFileId);
-      // console.log(`   ✓ Raw file ${rawDriveFileId} deleted`);
     } catch (err) {
-      /*
       console.warn(
         `   ⚠  Could not delete raw file: ${(err as Error).message}`,
       );
-      */
     }
 
     process.stdout.write("\n"); // Move to next line when fully finished

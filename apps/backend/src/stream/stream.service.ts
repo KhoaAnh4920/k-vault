@@ -80,6 +80,7 @@ export class StreamService {
     const lines = [
       '#EXTM3U',
       '#EXT-X-VERSION:3',
+      '#EXT-X-PLAYLIST-TYPE:VOD',
       `#EXT-X-TARGETDURATION:${targetDuration}`,
       '#EXT-X-MEDIA-SEQUENCE:0',
       '#EXT-X-INDEPENDENT-SEGMENTS',

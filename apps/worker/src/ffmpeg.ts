@@ -89,10 +89,6 @@ export async function transcodeToHls(
   if (onQualityStart)
     await onQualityStart("Initializing parallel transcoding...");
 
-  // console.log(
-  //   `🎞  Parallel transcoding to HLS (${qualities.length} qualities)...`,
-  // );
-
   // Track progress of each tier to calculate aggregate percentage
   const progressMap = new Map<string, number>();
   qualities.forEach((q) => progressMap.set(q.name, 0));
@@ -113,7 +109,6 @@ export async function transcodeToHls(
       const qualityDir = path.join(outputBaseDir, quality.name);
       fs.mkdirSync(qualityDir, { recursive: true });
 
-      // console.log(`  ⚙️  Starting ${quality.name}...`);
       const dur = await transcodeQuality(
         inputPath,
         qualityDir,
@@ -124,7 +119,6 @@ export async function transcodeToHls(
           updateAggregateProgress();
         },
       );
-      // console.log(`  ✓ ${quality.name} done`);
       return dur;
     }),
   );
@@ -177,6 +171,12 @@ async function transcodeQuality(
         quality.videoBitrate,
         "-b:a",
         quality.audioBitrate,
+        "-allow_sw",
+        "1",
+        "-g",
+        (segmentTime * 30).toString(),
+        "-keyint_min",
+        (segmentTime * 30).toString(),
         "-hls_time",
         segmentTime.toString(),
         "-hls_list_size",

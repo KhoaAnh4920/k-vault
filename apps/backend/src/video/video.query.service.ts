@@ -42,8 +42,7 @@ export class VideoQueryService {
     if (!isAdmin) {
       qb.andWhere(
         new Brackets((hb) => {
-          hb.where('v.visibility = :public')
-            .orWhere('v.ownerId = :userId');
+          hb.where('v.visibility = :public').orWhere('v.ownerId = :userId');
         }),
       );
       qb.setParameters({
@@ -73,7 +72,7 @@ export class VideoQueryService {
       'v.createdAt',
       'v.updatedAt',
       'v.visibility',
-      'v.thumbnailDriveFileId'
+      'v.thumbnailDriveFileId',
     ]);
 
     const [data, total] = await qb.getManyAndCount();
@@ -104,13 +103,26 @@ export class VideoQueryService {
     return this.videoRepo.findOne({ where: { id: chunk.videoId } });
   }
 
+  // async getVideoQualities(videoId: string): Promise<string[]> {
+  //   const rows = await this.chunkRepo
+  //     .createQueryBuilder('c')
+  //     .select('DISTINCT c.quality', 'quality')
+  //     .where('c.videoId = :videoId AND c.quality IS NOT NULL', { videoId })
+  //     .getRawMany<{ quality: string }>();
+  //   return rows.map((r) => r.quality).sort((a, b) => parseInt(b) - parseInt(a));
+  // }
+
   async getVideoQualities(videoId: string): Promise<string[]> {
     const rows = await this.chunkRepo
       .createQueryBuilder('c')
       .select('DISTINCT c.quality', 'quality')
       .where('c.videoId = :videoId AND c.quality IS NOT NULL', { videoId })
       .getRawMany<{ quality: string }>();
-    return rows.map((r) => r.quality).sort((a, b) => parseInt(b) - parseInt(a));
+
+    const priority = { HD: 2, SD: 1 };
+    return rows
+      .map((r) => r.quality)
+      .sort((a, b) => (priority[b] || 0) - (priority[a] || 0));
   }
 
   async getChunksByQuality(
