@@ -1,6 +1,7 @@
 import ffmpeg from "fluent-ffmpeg";
 import * as path from "path";
 import * as fs from "fs";
+import * as os from "os";
 
 if (process.env.FFMPEG_PATH) {
   ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH);
@@ -150,6 +151,35 @@ export async function extractThumbnail(
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
+let cachedVideoCodec: string | null = null;
+
+async function getBestVideoCodec(): Promise<string> {
+  if (cachedVideoCodec) return cachedVideoCodec;
+
+  return new Promise((resolve) => {
+    ffmpeg.getAvailableEncoders((err, encoders) => {
+      if (err || !encoders) {
+        cachedVideoCodec = "libx264";
+        return resolve("libx264");
+      }
+
+      const platform = os.platform();
+      if (platform === "darwin" && encoders["h264_videotoolbox"]) {
+        cachedVideoCodec = "h264_videotoolbox";
+      } else if (encoders["h264_qsv"]) {
+        cachedVideoCodec = "h264_qsv";
+      } else if (encoders["h264_nvenc"]) {
+        cachedVideoCodec = "h264_nvenc";
+      } else {
+        cachedVideoCodec = "libx264";
+      }
+
+      console.log(`🤖 Auto-detected Video Codec: ${cachedVideoCodec}`);
+      resolve(cachedVideoCodec);
+    });
+  });
+}
+
 async function transcodeQuality(
   inputPath: string,
   outputDir: string,
@@ -159,10 +189,12 @@ async function transcodeQuality(
 ): Promise<number> {
   const playlistPath = path.join(outputDir, "playlist.m3u8");
   let durationSeconds = 0;
+  
+  const videoCodec = await getBestVideoCodec();
 
   await new Promise<number>((resolve, reject) => {
     ffmpeg(inputPath)
-      .videoCodec("h264_videotoolbox")
+      .videoCodec(videoCodec)
       .audioCodec("aac")
       .addOptions([
         "-vf",
@@ -201,7 +233,14 @@ async function transcodeQuality(
         resolve(durationSeconds);
       })
       .on("error", (err: Error, _: unknown, stderr: unknown) => {
-        if (String(stderr).includes("videotoolbox")) {
+        const errStr = String(stderr).toLowerCase();
+        if (
+          errStr.includes("videotoolbox") ||
+          errStr.includes("qsv") ||
+          errStr.includes("nvenc") ||
+          errStr.includes("unknown encoder") ||
+          errStr.includes("device failed")
+        ) {
           transcodeQualitySoftware(
             inputPath,
             outputDir,
@@ -231,7 +270,7 @@ async function transcodeQualitySoftware(
   onProgress?: (percent: number) => void,
 ): Promise<number> {
   console.warn(
-    `  ⚠  videotoolbox unavailable for ${quality.name}, using libx264`,
+    `  ⚠  Hardware acceleration unavailable for ${quality.name}, falling back to libx264`,
   );
   return new Promise<number>((resolve, reject) => {
     ffmpeg(inputPath)

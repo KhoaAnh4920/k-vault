@@ -4,12 +4,7 @@ import * as fs from "fs";
 import * as os from "os";
 import { Worker, Job } from "bullmq";
 import { Pool } from "pg";
-import {
-  downloadFile,
-  prepareVideoFolder,
-  uploadSingleSegment,
-  deleteFile,
-} from "./drive";
+import storage from "./storage";
 import {
   getVideoInfo,
   selectQualities,
@@ -168,8 +163,7 @@ async function processJob(
     fs.mkdirSync(jobDir, { recursive: true });
 
     // 3. Download raw file from Google Drive
-    // await downloadFile(rawDriveFileId, rawPath);
-    await downloadFile(rawDriveFileId, rawPath);
+    await storage.downloadFile(rawDriveFileId, rawPath);
     await checkExists("downloading");
 
     await reportProgress(15, "Analyzing source...");
@@ -196,7 +190,7 @@ async function processJob(
     await checkExists("thumbnailing");
 
     // 5b. Prepare Drive Folder (create folder and move raw file before transcoding)
-    const videoFolderId = await prepareVideoFolder(
+    const videoFolderId = await storage.prepareVideoFolder(
       videoId,
       rawDriveFileId,
       driveFolderId,
@@ -247,7 +241,7 @@ async function processJob(
             // Launch parallel upload task
             const uploadTask = (async () => {
               try {
-                const res = await uploadSingleSegment(
+                const res = await storage.uploadSingleSegment(
                   fullPath,
                   q.name,
                   f,
@@ -337,7 +331,7 @@ async function processJob(
     // 7. Upload Thumbnail (if generated)
     let thumbnailFileId: string | null = null;
     if (fs.existsSync(thumbnailPath)) {
-      thumbnailFileId = await uploadSingleSegment(
+      thumbnailFileId = await storage.uploadSingleSegment(
         thumbnailPath,
         "system",
         "thumbnail.jpg",
@@ -357,7 +351,7 @@ async function processJob(
 
     // 9. Delete raw source file from Drive — no longer needed after HLS upload
     try {
-      await deleteFile(rawDriveFileId);
+      await storage.deleteFile(rawDriveFileId);
     } catch (err) {
       console.warn(
         `   ⚠  Could not delete raw file: ${(err as Error).message}`,
