@@ -1,4 +1,10 @@
-import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Readable } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -8,7 +14,11 @@ import type { IStorageService } from '../storage/storage.interface';
 import { STORAGE_SERVICE } from '../storage/storage.interface';
 import { Video, VideoStatus, VideoVisibility } from './entities/video.entity';
 import { VideoChunk } from './entities/video-chunk.entity';
-import { CreateVideoDto, InitUploadDto, UpdateVideoMetadataDto } from './dto/video.dto';
+import {
+  CreateVideoDto,
+  InitUploadDto,
+  UpdateVideoMetadataDto,
+} from './dto/video.dto';
 import { TRANSCODE_QUEUE } from '../queue/queue.constants';
 
 export interface TranscodeJobData {
@@ -157,14 +167,18 @@ export class VideoCommandService {
           try {
             await this.storage.deleteFile(video.thumbnailDriveFileId);
           } catch (delErr) {
-            this.logger.warn(`Failed to delete old thumbnail: ${(delErr as Error).message}`);
+            this.logger.warn(
+              `Failed to delete old thumbnail: ${(delErr as Error).message}`,
+            );
           }
         }
 
         video.thumbnailDriveFileId = newFileId;
         this.logger.log(`Thumbnail updated for video ${id}`);
       } catch (err) {
-        this.logger.error(`Failed to update thumbnail: ${(err as Error).message}`);
+        this.logger.error(
+          `Failed to update thumbnail: ${(err as Error).message}`,
+        );
       }
     }
 

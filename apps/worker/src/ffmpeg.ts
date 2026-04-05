@@ -3,8 +3,20 @@ import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
 
+// Auto-inject binaries
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ffmpegInstaller = require("@ffmpeg-installer/ffmpeg");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ffprobeInstaller = require("@ffprobe-installer/ffprobe");
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+ffmpeg.setFfprobePath(ffprobeInstaller.path);
+
 if (process.env.FFMPEG_PATH) {
   ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH);
+}
+if (process.env.FFPROBE_PATH) {
+  ffmpeg.setFfprobePath(process.env.FFPROBE_PATH);
 }
 
 export interface QualityPreset {

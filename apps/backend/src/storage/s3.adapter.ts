@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Readable } from 'stream';
 import {
@@ -6,6 +6,8 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   PutObjectCommand,
+  HeadBucketCommand,
+  CreateBucketCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as crypto from 'crypto';
@@ -16,7 +18,7 @@ import {
 } from './storage.interface';
 
 @Injectable()
-export class S3StorageAdapter implements IStorageService {
+export class S3StorageAdapter implements IStorageService, OnModuleInit {
   private readonly logger = new Logger(S3StorageAdapter.name);
   private readonly s3: S3Client;
   private readonly bucket: string;
@@ -32,6 +34,37 @@ export class S3StorageAdapter implements IStorageService {
       forcePathStyle: true,
     });
     this.bucket = this.config.get<string>('S3_BUCKET')!;
+  }
+
+  async onModuleInit() {
+    await this.ensureBucketExists();
+  }
+
+  private async ensureBucketExists() {
+    try {
+      await this.s3.send(new HeadBucketCommand({ Bucket: this.bucket }));
+      this.logger.log(`S3 Bucket "${this.bucket}" exists.`);
+    } catch (e: unknown) {
+      const error = e as any;
+      if (
+        error.$metadata?.httpStatusCode === 404 ||
+        error.name === 'NotFound'
+      ) {
+        this.logger.log(`S3 Bucket "${this.bucket}" not found. Creating...`);
+        try {
+          await this.s3.send(new CreateBucketCommand({ Bucket: this.bucket }));
+          this.logger.log(`Created S3 Bucket "${this.bucket}".`);
+        } catch (err: unknown) {
+          const createError = err as any;
+          this.logger.error(
+            `Failed to create S3 Bucket "${this.bucket}"`,
+            createError,
+          );
+        }
+      } else {
+        this.logger.error(`Error checking S3 Bucket "${this.bucket}"`, error);
+      }
+    }
   }
 
   async initiateResumableUpload(

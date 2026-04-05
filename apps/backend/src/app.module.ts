@@ -22,7 +22,10 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
-        ssl: { rejectUnauthorized: false },
+        ssl:
+          config.get<string>('NODE_ENV') === 'production'
+            ? { rejectUnauthorized: false }
+            : false,
         entities: [Video, VideoChunk],
         //synchronize: config.get<string>('NODE_ENV') !== 'production',
         synchronize: true,
