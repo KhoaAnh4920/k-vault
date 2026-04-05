@@ -101,10 +101,13 @@ export class S3Provider implements StorageProvider {
     const rawFileName = path.basename(rawFileKey);
     const newRawKey = `${newPrefix}${rawFileName}`;
 
+    // CopySource must be URL-encoded, otherwise non-ASCII chars crash the HTTP request headers
+    const encodedRawFileKey = rawFileKey.split('/').map(encodeURIComponent).join('/');
+
     await this.s3.send(
       new CopyObjectCommand({
         Bucket: this.bucket,
-        CopySource: `${this.bucket}/${rawFileKey}`, // format: bucket/key
+        CopySource: `${this.bucket}/${encodedRawFileKey}`, // format: bucket/key
         Key: newRawKey,
       })
     );
