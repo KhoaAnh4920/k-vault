@@ -91,7 +91,9 @@ export class StreamService {
       // legacy chunks that were saved before this field was added.
       const dur = (chunk.durationSeconds ?? 6.0).toFixed(6);
       lines.push(`#EXTINF:${dur},`);
-      lines.push(`/api/stream/chunk/${chunk.driveFileId}`);
+      // S3 keys contain slashes '/', which break the Express/NestJS route /chunk/:fileId 
+      // if not URI encoded. encodeURIComponent ensures it's passed as a single URL parameter.
+      lines.push(`/api/stream/chunk/${encodeURIComponent(chunk.driveFileId)}`);
     }
 
     lines.push('#EXT-X-ENDLIST');

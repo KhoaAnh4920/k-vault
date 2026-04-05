@@ -55,14 +55,14 @@ export class S3Provider implements StorageProvider {
         : `${parentPrefix}/${fileName}`;
     }
 
-    const fileStream = fs.createReadStream(localPath);
+    const fileBuffer = await fs.promises.readFile(localPath);
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const cmd = new PutObjectCommand({
           Bucket: this.bucket,
           Key: key,
-          Body: fileStream,
+          Body: fileBuffer,
           ContentType: mimeType,
         });
 
@@ -77,15 +77,6 @@ export class S3Provider implements StorageProvider {
             )}ms...`,
           );
           await new Promise((res) => setTimeout(res, delay));
-          // Reset stream position for retry
-          fileStream.destroy();
-          return this.uploadFile(
-            localPath,
-            fileName,
-            mimeType,
-            parentPrefix,
-            retries - 1,
-          );
         } else {
           throw err;
         }
