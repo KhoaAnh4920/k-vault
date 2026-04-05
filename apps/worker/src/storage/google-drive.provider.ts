@@ -9,7 +9,7 @@ export class GoogleDriveProvider implements StorageProvider {
   constructor() {
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET
+      process.env.GOOGLE_CLIENT_SECRET,
     );
 
     oauth2Client.setCredentials({
@@ -22,7 +22,7 @@ export class GoogleDriveProvider implements StorageProvider {
   async downloadFile(fileId: string, destPath: string): Promise<void> {
     const res = await this.drive.files.get(
       { fileId, alt: "media" },
-      { responseType: "stream" }
+      { responseType: "stream" },
     );
 
     await new Promise<void>((resolve, reject) => {
@@ -39,7 +39,7 @@ export class GoogleDriveProvider implements StorageProvider {
     fileName: string,
     mimeType: string,
     parentFolderId?: string,
-    retries = 5
+    retries = 5,
   ): Promise<string> {
     const folder = parentFolderId ?? process.env.GOOGLE_DRIVE_FOLDER_ID;
 
@@ -62,7 +62,7 @@ export class GoogleDriveProvider implements StorageProvider {
       } catch (err: any) {
         const isRateLimit =
           err?.errors?.some?.(
-            (e: any) => e.reason === "userRateLimitExceeded"
+            (e: any) => e.reason === "userRateLimitExceeded",
           ) ||
           err?.code === 403 ||
           err?.status === 403;
@@ -71,8 +71,8 @@ export class GoogleDriveProvider implements StorageProvider {
           const delay = Math.pow(2, attempt + 1) * 1000 + Math.random() * 1000;
           console.warn(
             `  ⚠️ Rate limit hit for ${fileName}. Retrying in ${Math.round(
-              delay
-            )}ms...`
+              delay,
+            )}ms...`,
           );
           await new Promise((res) => setTimeout(res, delay));
         } else {
@@ -106,7 +106,7 @@ export class GoogleDriveProvider implements StorageProvider {
 
   private async createFolder(
     name: string,
-    parentFolderId?: string
+    parentFolderId?: string,
   ): Promise<string> {
     const folder = parentFolderId ?? process.env.GOOGLE_DRIVE_FOLDER_ID;
     const res = await this.drive.files.create({
@@ -124,10 +124,10 @@ export class GoogleDriveProvider implements StorageProvider {
   async prepareVideoFolder(
     videoId: string,
     rawDriveFileId: string,
-    parentFolderId?: string
+    parentFolderId?: string,
   ): Promise<string> {
     const videoFolderId = await this.createFolder(videoId, parentFolderId);
-    await this.moveFile(rawDriveFileId, videoFolderId);
+
     return videoFolderId;
   }
 
@@ -135,14 +135,14 @@ export class GoogleDriveProvider implements StorageProvider {
     localPath: string,
     qualityName: string,
     originalFilename: string,
-    videoFolderId: string
+    videoFolderId: string,
   ): Promise<{ filename: string; driveFileId: string }> {
     const driveName = `${qualityName}_${originalFilename}`;
     const fileId = await this.uploadFile(
       localPath,
       driveName,
       "video/MP2T",
-      videoFolderId
+      videoFolderId,
     );
     return { filename: driveName, driveFileId: fileId };
   }

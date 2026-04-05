@@ -46,7 +46,7 @@ export class S3Provider implements StorageProvider {
     fileName: string,
     mimeType: string,
     parentPrefix?: string,
-    retries = 5
+    retries = 5,
   ): Promise<string> {
     let key = fileName;
     if (parentPrefix) {
@@ -73,13 +73,19 @@ export class S3Provider implements StorageProvider {
           const delay = Math.pow(2, attempt + 1) * 1000 + Math.random() * 1000;
           console.warn(
             `  ⚠️ S3 Upload error for ${fileName}. Retrying in ${Math.round(
-              delay
-            )}ms...`
+              delay,
+            )}ms...`,
           );
           await new Promise((res) => setTimeout(res, delay));
           // Reset stream position for retry
           fileStream.destroy();
-          return this.uploadFile(localPath, fileName, mimeType, parentPrefix, retries - 1);
+          return this.uploadFile(
+            localPath,
+            fileName,
+            mimeType,
+            parentPrefix,
+            retries - 1,
+          );
         } else {
           throw err;
         }
@@ -91,33 +97,11 @@ export class S3Provider implements StorageProvider {
   async prepareVideoFolder(
     videoId: string,
     rawFileKey: string,
-    parentPrefix?: string // This maps to the root prefix, eg "hls"
+    parentPrefix?: string, // This maps to the root prefix, eg "hls"
   ): Promise<string> {
     // S3 doesn't have folders, so we just construct the new prefix
     const base = parentPrefix ? `${parentPrefix}/${videoId}` : videoId;
     const newPrefix = base.endsWith("/") ? base : `${base}/`;
-    
-    // We move the raw file into this "folder" (prefix)
-    const rawFileName = path.basename(rawFileKey);
-    const newRawKey = `${newPrefix}${rawFileName}`;
-
-    // CopySource must be URL-encoded, otherwise non-ASCII chars crash the HTTP request headers
-    const encodedRawFileKey = rawFileKey.split('/').map(encodeURIComponent).join('/');
-
-    await this.s3.send(
-      new CopyObjectCommand({
-        Bucket: this.bucket,
-        CopySource: `${this.bucket}/${encodedRawFileKey}`, // format: bucket/key
-        Key: newRawKey,
-      })
-    );
-
-    await this.s3.send(
-      new DeleteObjectCommand({
-        Bucket: this.bucket,
-        Key: rawFileKey,
-      })
-    );
 
     return newPrefix;
   }
@@ -140,14 +124,14 @@ export class S3Provider implements StorageProvider {
     localPath: string,
     qualityName: string,
     originalFilename: string,
-    videoPrefix: string
+    videoPrefix: string,
   ): Promise<{ filename: string; driveFileId: string }> {
     const driveName = `${qualityName}_${originalFilename}`;
     const fileId = await this.uploadFile(
       localPath,
       driveName,
       "video/MP2T",
-      videoPrefix
+      videoPrefix,
     );
     // for S3, driveFileId is just the Key.
     return { filename: driveName, driveFileId: fileId };

@@ -203,35 +203,38 @@ async function transcodeQuality(
   let durationSeconds = 0;
   
   const videoCodec = await getBestVideoCodec();
+  const options = [
+    "-vf",
+    `scale=-2:${quality.height}`,
+    "-b:v",
+    quality.videoBitrate,
+    "-b:a",
+    quality.audioBitrate,
+    "-g",
+    (segmentTime * 30).toString(),
+    "-keyint_min",
+    (segmentTime * 30).toString(),
+    "-hls_time",
+    segmentTime.toString(),
+    "-hls_list_size",
+    "0",
+    "-hls_segment_filename",
+    path.join(outputDir, "segment%03d.ts"),
+    "-hls_flags",
+    "independent_segments",
+    "-f",
+    "hls",
+  ];
+
+  if (videoCodec !== "libx264") {
+    options.splice(6, 0, "-allow_sw", "1");
+  }
 
   await new Promise<number>((resolve, reject) => {
     ffmpeg(inputPath)
       .videoCodec(videoCodec)
       .audioCodec("aac")
-      .addOptions([
-        "-vf",
-        `scale=-2:${quality.height}`,
-        "-b:v",
-        quality.videoBitrate,
-        "-b:a",
-        quality.audioBitrate,
-        "-allow_sw",
-        "1",
-        "-g",
-        (segmentTime * 30).toString(),
-        "-keyint_min",
-        (segmentTime * 30).toString(),
-        "-hls_time",
-        segmentTime.toString(),
-        "-hls_list_size",
-        "0",
-        "-hls_segment_filename",
-        path.join(outputDir, "segment%03d.ts"),
-        "-hls_flags",
-        "independent_segments",
-        "-f",
-        "hls",
-      ])
+      .addOptions(options)
       .output(playlistPath)
       .on("codecData", (data: { duration?: string }) => {
         if (data.duration) durationSeconds = parseDuration(data.duration);
