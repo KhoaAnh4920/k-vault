@@ -180,6 +180,8 @@ async function getBestVideoCodec(): Promise<string> {
         cachedVideoCodec = "h264_videotoolbox";
       } else if (encoders["h264_qsv"]) {
         cachedVideoCodec = "h264_qsv";
+      } else if (encoders["h264_vaapi"]) {
+        cachedVideoCodec = "h264_vaapi";
       } else if (encoders["h264_nvenc"]) {
         cachedVideoCodec = "h264_nvenc";
       } else {
@@ -225,6 +227,11 @@ async function transcodeQuality(
     "-f",
     "hls",
   ];
+
+  if (videoCodec === "libx264") {
+    // Add libx264 CPU optimizations
+    options.push("-preset", "veryfast", "-threads", "2");
+  }
 
   if (videoCodec !== "libx264") {
     options.splice(6, 0, "-allow_sw", "1");
