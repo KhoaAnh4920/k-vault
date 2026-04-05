@@ -220,10 +220,14 @@ async function processJob(
           const qDir = path.join(hlsDir, q.name);
           if (!fs.existsSync(qDir)) continue;
 
-          const tsFiles = fs
+          let tsFiles = fs
             .readdirSync(qDir)
             .filter((f) => f.endsWith(".ts"))
             .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+          if (!transcodeFinished && tsFiles.length > 0) {
+            tsFiles.pop(); // Remove the last item from being uploaded yet
+          }
 
           for (const f of tsFiles) {
             const fKey = `${q.name}/${f}`;
@@ -331,12 +335,14 @@ async function processJob(
     // 7. Upload Thumbnail (if generated)
     let thumbnailFileId: string | null = null;
     if (fs.existsSync(thumbnailPath)) {
-      thumbnailFileId = await storage.uploadSingleSegment(
-        thumbnailPath,
-        "system",
-        "thumbnail.jpg",
-        videoFolderId,
-      ).then((r) => r.driveFileId);
+      thumbnailFileId = await storage
+        .uploadSingleSegment(
+          thumbnailPath,
+          "system",
+          "thumbnail.jpg",
+          videoFolderId,
+        )
+        .then((r) => r.driveFileId);
     }
 
     // 8. Save to DB
