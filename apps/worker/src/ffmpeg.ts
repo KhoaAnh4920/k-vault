@@ -203,11 +203,16 @@ async function transcodeQuality(
 ): Promise<number> {
   const playlistPath = path.join(outputDir, "playlist.m3u8");
   let durationSeconds = 0;
-  
+
   const videoCodec = await getBestVideoCodec();
+  const scaleFilter =
+    videoCodec === "h264_qsv"
+      ? `vpp_qsv=h=${quality.height}:w=-2`
+      : `scale=-2:${quality.height}`;
+
   const options = [
     "-vf",
-    `scale=-2:${quality.height}`,
+    scaleFilter,
     "-b:v",
     quality.videoBitrate,
     "-b:a",
@@ -227,6 +232,36 @@ async function transcodeQuality(
     "-f",
     "hls",
   ];
+
+  if (videoCodec === "h264_qsv") {
+    options.push("-preset", "veryfast");
+    options.push("-global_quality", "25");
+  } else if (videoCodec === "libx264") {
+    options.push("-preset", "veryfast", "-threads", "2");
+  }
+
+  // const options = [
+  //   "-vf",
+  //   `scale=-2:${quality.height}`,
+  //   "-b:v",
+  //   quality.videoBitrate,
+  //   "-b:a",
+  //   quality.audioBitrate,
+  //   "-g",
+  //   (segmentTime * 30).toString(),
+  //   "-keyint_min",
+  //   (segmentTime * 30).toString(),
+  //   "-hls_time",
+  //   segmentTime.toString(),
+  //   "-hls_list_size",
+  //   "0",
+  //   "-hls_segment_filename",
+  //   path.join(outputDir, "segment%03d.ts"),
+  //   "-hls_flags",
+  //   "independent_segments",
+  //   "-f",
+  //   "hls",
+  // ];
 
   if (videoCodec === "libx264") {
     // Add libx264 CPU optimizations
@@ -256,6 +291,7 @@ async function transcodeQuality(
       })
       .on("error", (err: Error, _: unknown, stderr: unknown) => {
         const errStr = String(stderr).toLowerCase();
+        console.error("FFmpeg Stderr:", stderr);
         if (
           errStr.includes("videotoolbox") ||
           errStr.includes("qsv") ||
