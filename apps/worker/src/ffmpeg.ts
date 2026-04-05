@@ -263,15 +263,6 @@ async function transcodeQuality(
   //   "hls",
   // ];
 
-  if (videoCodec === "libx264") {
-    // Add libx264 CPU optimizations
-    options.push("-preset", "veryfast", "-threads", "2");
-  }
-
-  if (videoCodec !== "libx264") {
-    options.splice(6, 0, "-allow_sw", "1");
-  }
-
   await new Promise<number>((resolve, reject) => {
     ffmpeg(inputPath)
       .videoCodec(videoCodec)
