@@ -5,6 +5,8 @@ import {
   S3Client,
   GetObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   HeadBucketCommand,
   CreateBucketCommand,
@@ -130,6 +132,11 @@ export class S3StorageAdapter implements IStorageService, OnModuleInit {
   }
 
   async deleteFile(fileId: string): Promise<void> {
+    // If the ID looks like a folder prefix (ends with '/'), delete all objects under it
+    if (fileId.endsWith('/')) {
+      await this.deleteFolder(fileId);
+      return;
+    }
     const cmd = new DeleteObjectCommand({
       Bucket: this.bucket,
       Key: fileId,
@@ -142,5 +149,45 @@ export class S3StorageAdapter implements IStorageService, OnModuleInit {
         `Failed to delete S3 object: ${fileId}. ${(err as Error).message}`,
       );
     }
+  }
+
+  /**
+   * Deletes ALL objects under a given S3 prefix (simulates a folder delete).
+   * Used when removing a video and all its HLS segments from MinIO/S3.
+   */
+  async deleteFolder(prefix: string): Promise<void> {
+    const normalizedPrefix = prefix.endsWith('/') ? prefix : `${prefix}/`;
+    let continuationToken: string | undefined;
+    let totalDeleted = 0;
+
+    do {
+      const listCmd = new ListObjectsV2Command({
+        Bucket: this.bucket,
+        Prefix: normalizedPrefix,
+        ContinuationToken: continuationToken,
+      });
+      const listRes = await this.s3.send(listCmd);
+
+      const objects = listRes.Contents ?? [];
+      if (objects.length > 0) {
+        const deleteCmd = new DeleteObjectsCommand({
+          Bucket: this.bucket,
+          Delete: {
+            Objects: objects.map((o) => ({ Key: o.Key! })),
+            Quiet: true,
+          },
+        });
+        await this.s3.send(deleteCmd);
+        totalDeleted += objects.length;
+      }
+
+      continuationToken = listRes.IsTruncated
+        ? listRes.NextContinuationToken
+        : undefined;
+    } while (continuationToken);
+
+    this.logger.log(
+      `Deleted S3 folder "${normalizedPrefix}" (${totalDeleted} objects)`,
+    );
   }
 }

@@ -206,22 +206,59 @@ export class VideoCommandService {
   }
 
   async remove(id: string): Promise<void> {
-    const video = await this.videoRepo.findOne({ where: { id } });
+    const video = await this.videoRepo.findOne({
+      where: { id },
+      relations: ['chunks'],
+    });
     if (!video) throw new NotFoundException(`Video ${id} not found`);
 
+    // 1. Delete all HLS segments + folder contents from S3 (prefix delete)
     const folderId = video.hlsFolderDriveId;
     if (folderId !== null) {
       try {
-        await this.storage.deleteFile(folderId);
-        this.logger.log(`Deleted Drive folder ${folderId} for video ${id}`);
+        // Ensure the folder path ends with '/' so S3 adapter triggers deleteFolder()
+        const folderPrefix = folderId.endsWith('/') ? folderId : `${folderId}/`;
+        await this.storage.deleteFile(folderPrefix);
+        this.logger.log(
+          `Deleted storage folder: ${folderPrefix} for video ${id}`,
+        );
       } catch (err) {
         this.logger.warn(
-          `Failed to delete Drive folder ${folderId}: ${(err as Error).message}`,
+          `Failed to delete storage folder ${folderId}: ${(err as Error).message}`,
         );
       }
     }
 
-    // If processing, attempt to remove from BullMQ
+    // 2. Delete thumbnail separately only if it's stored outside the HLS folder
+    //    (e.g. pre-selected thumbnails uploaded to the 'public/' prefix)
+    if (video.thumbnailDriveFileId) {
+      const thumbKey = video.thumbnailDriveFileId;
+      const isInsideFolder = folderId !== null && thumbKey.startsWith(folderId);
+      if (!isInsideFolder) {
+        try {
+          await this.storage.deleteFile(thumbKey);
+          this.logger.log(`Deleted thumbnail: ${thumbKey}`);
+        } catch (err) {
+          this.logger.warn(
+            `Failed to delete thumbnail ${thumbKey}: ${(err as Error).message}`,
+          );
+        }
+      }
+    }
+
+    // 3. Delete raw source file from storage (if it still exists — normally removed by worker)
+    if (video.rawDriveFileId) {
+      try {
+        await this.storage.deleteFile(video.rawDriveFileId);
+        this.logger.log(`Deleted raw file: ${video.rawDriveFileId}`);
+      } catch (err) {
+        this.logger.warn(
+          `Failed to delete raw file ${video.rawDriveFileId}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // 4. If still processing, remove the BullMQ job to stop the worker
     if (video.status === VideoStatus.PROCESSING) {
       try {
         const job = await this.transcodeQueue.getJob(id);
@@ -236,6 +273,7 @@ export class VideoCommandService {
       }
     }
 
+    // 5. Delete DB records (chunks cascade via FK, then video)
     await this.chunkRepo.delete({ videoId: id });
     await this.videoRepo.delete(id);
     this.logger.log(`Video ${id} fully deleted`);
