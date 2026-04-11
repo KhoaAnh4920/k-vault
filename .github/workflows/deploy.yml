@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Install dependencies
         run: |
@@ -46,6 +46,8 @@ jobs:
           cp ~/kvault-secrets/.env.worker apps/worker/.env
 
       - name: Start or Reload PM2 Processes
+        env:
+          RUNNER_TRACKING_ID: ""
         run: |
           pm2 startOrReload ecosystem.config.js
           pm2 save
