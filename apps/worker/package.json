@@ -1,5 +1,5 @@
 {
-  "name": "worker",
+  "name": "kvault-worker",
   "version": "0.0.1",
   "description": "Local transcode worker for k-vault streaming platform",
   "private": true,

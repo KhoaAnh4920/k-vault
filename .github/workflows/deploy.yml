@@ -29,7 +29,8 @@ jobs:
 
       - name: Build Backend & Worker
         run: |
-          pnpm -r build
+          pnpm --filter kvault-backend build
+          pnpm --filter kvault-worker build
 
       - name: Inject Environment Variables
         run: |
