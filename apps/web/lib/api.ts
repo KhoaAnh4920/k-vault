@@ -62,16 +62,36 @@ export interface InitUploadResponse {
 const CHUNK_SIZE = 20 * 1024 * 1024; // 20 MB
 
 export async function uploadFileInChunks(
-  sessionUrl: string,
+  uploadUrl: string,
   file: File,
   onProgress: (pct: number) => void,
 ): Promise<void> {
+  const isGoogleDrive = uploadUrl.includes("googleapis.com");
+
+  if (!isGoogleDrive) {
+    // S3 Presigned URLs do not support Google Drive's Resume Incomplete protocol.
+    // They expect the entire file in a single PUT request.
+    await axios.put(uploadUrl, file, {
+      headers: {
+        "Content-Type": file.type || "video/mp4",
+      },
+      onUploadProgress: (event) => {
+        if (event.total) {
+          onProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+        }
+      },
+    });
+    onProgress(100);
+    return;
+  }
+
+  // Fallback for Google Drive Resume Incomplete chunking
   let offset = 0;
   while (offset < file.size) {
     const chunkEnd = Math.min(offset + CHUNK_SIZE, file.size) - 1;
     const chunk = file.slice(offset, chunkEnd + 1);
 
-    const res = await axios.put(sessionUrl, chunk, {
+    const res = await axios.put(uploadUrl, chunk, {
       headers: {
         "Content-Type": file.type || "video/mp4",
         "Content-Range": `bytes ${offset}-${chunkEnd}/${file.size}`,
