@@ -2,6 +2,7 @@ import "dotenv/config";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
+import * as readline from "readline";
 import { Worker, Job } from "bullmq";
 import { Pool } from "pg";
 import storage from "./storage";
@@ -18,12 +19,23 @@ import {
   saveVideoChunks,
   checkVideoExists,
 } from "./db";
+import { logStructured } from "./structured-log";
 
 class JobCancelledError extends Error {
   constructor(videoId: string) {
     super(`Job for video ${videoId} was cancelled (deleted from DB)`);
     this.name = "JobCancelledError";
   }
+}
+
+function isNonRetryableMediaError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("invalid data found when processing input") ||
+    lower.includes("error opening input file") ||
+    lower.includes("no video stream found")
+  );
 }
 
 const TRANSCODE_QUEUE_LOCAL = "transcode-local";
@@ -112,6 +124,7 @@ async function processJob(
   job: Job<TranscodeJobData>,
   pool: Pool,
   driveFolderId: string,
+  queueName: string,
 ): Promise<void> {
   const {
     videoId,
@@ -122,15 +135,29 @@ async function processJob(
   const rawPath = path.join(jobDir, "raw.mp4");
   const hlsDir = path.join(jobDir, "hls");
   const thumbnailPath = path.join(jobDir, "thumbnail.jpg");
+  const provider = (process.env.STORAGE_TYPE ?? "DRIVE").toUpperCase();
 
   console.log(`\n🎬 [Job ${job.id}] Processing video: ${videoId}`);
 
   try {
+    logStructured({
+      stage: "job_start",
+      videoId,
+      jobId: job.id,
+      queueName,
+      provider,
+      tempDir: jobDir,
+    });
+
+    let lastProgressTTYDraw = 0;
+    const PROGRESS_TTY_MIN_MS = 250;
+
     const reportProgress = async (progress: number, detail?: string) => {
       await pubClient.publish(
         "video.status_changed",
         JSON.stringify({ videoId, status: "processing", progress, detail }),
       );
+
       const barLength = 20;
       const filledLength = Math.floor((progress / 100) * barLength);
       const filledChar = "█";
@@ -139,9 +166,31 @@ async function processJob(
         filledChar.repeat(filledLength) +
         emptyChar.repeat(barLength - filledLength);
 
-      // Use \r to update the current line, padEnd to clear old characters
-      const line = `\r🎞  Progress: [${bar}] ${progress}% | ${detail || "Processing..."}`;
-      process.stdout.write(line.padEnd(100));
+      const rawLine = `🎞  Progress: [${bar}] ${progress}% | ${detail || "Processing..."}`;
+      const cols = process.stdout.columns ?? 100;
+      const line =
+        rawLine.length > cols - 1
+          ? rawLine.slice(0, Math.max(20, cols - 4)) + "..."
+          : rawLine;
+
+      if (!process.stdout.isTTY) {
+        console.log(line);
+        return;
+      }
+
+      const now = Date.now();
+      const forceDraw = progress >= 100;
+      if (
+        !forceDraw &&
+        now - lastProgressTTYDraw < PROGRESS_TTY_MIN_MS
+      ) {
+        return;
+      }
+      lastProgressTTYDraw = now;
+
+      readline.cursorTo(process.stdout, 0);
+      readline.clearLine(process.stdout, 0);
+      process.stdout.write(line);
     };
 
     const checkExists = async (stage: string) => {
@@ -163,8 +212,19 @@ async function processJob(
     fs.mkdirSync(jobDir, { recursive: true });
 
     // 3. Download raw file from Google Drive
+    const downloadStarted = Date.now();
     await storage.downloadFile(rawDriveFileId, rawPath);
     await checkExists("downloading");
+    const rawBytes = fs.statSync(rawPath).size;
+    logStructured({
+      stage: "download_done",
+      videoId,
+      jobId: job.id,
+      queueName,
+      provider,
+      rawBytes,
+      downloadMs: Date.now() - downloadStarted,
+    });
 
     await reportProgress(15, "Analyzing source...");
 
@@ -176,6 +236,20 @@ async function processJob(
     if (videoInfo.durationSeconds > 1800)
       segmentTime = 30; // > 30m
     else if (videoInfo.durationSeconds > 300) segmentTime = 10; // 5m - 30m
+
+    logStructured({
+      stage: "probe_done",
+      videoId,
+      jobId: job.id,
+      queueName,
+      width: videoInfo.width,
+      height: videoInfo.height,
+      durationSeconds: videoInfo.durationSeconds,
+      qualityPresetCount: qualities.length,
+      qualityNames: qualities.map((q) => q.name),
+      segmentTime,
+      rawBytes,
+    });
 
     await checkExists("probing");
     await reportProgress(25, "Transcoding to HLS...");
@@ -302,16 +376,28 @@ async function processJob(
         );
       },
       segmentTime,
+      { videoId, jobId: job.id, queueName },
     ).then((res) => {
       transcodeFinished = true;
       return res;
     });
 
     // Run transcoding and streaming upload concurrently
+    const transcodeUploadStarted = Date.now();
     const [{ durationSeconds }] = await Promise.all([
       transcodeTask,
       pollAndUpload(),
     ]);
+    logStructured({
+      stage: "transcode_upload_done",
+      videoId,
+      jobId: job.id,
+      queueName,
+      provider,
+      durationSeconds,
+      chunkCount: allChunks.length,
+      wallClockMs: Date.now() - transcodeUploadStarted,
+    });
 
     await checkExists("uploading");
     await reportProgress(95, "Finalizing...");
@@ -365,17 +451,71 @@ async function processJob(
     }
 
     process.stdout.write("\n"); // Move to next line when fully finished
+    logStructured({
+      stage: "job_ready",
+      videoId,
+      jobId: job.id,
+      queueName,
+      provider,
+      durationSeconds: Math.round(durationSeconds || videoInfo.durationSeconds),
+    });
     console.log(`✅ [Job ${job.id}] Video ${videoId} is READY\n`);
     await pubClient.publish(
       "video.status_changed",
       JSON.stringify({ videoId, status: "ready" }),
     );
   } catch (err) {
+    if (process.stdout.isTTY) process.stdout.write("\n");
     if (err instanceof JobCancelledError) {
+      logStructured({
+        stage: "job_cancelled",
+        videoId,
+        jobId: job.id,
+        queueName,
+        message: "Video removed from DB during processing",
+      });
       console.log(`🛑 [Job ${job.id}] Finalizing cancelled job (no retry)...`);
       return; // Exit normally to prevent BullMQ retries
     }
 
+    if (isNonRetryableMediaError(err)) {
+      logStructured({
+        stage: "job_error",
+        videoId,
+        jobId: job.id,
+        queueName,
+        retryable: false,
+        cause: err instanceof Error ? err.message : String(err),
+      });
+      console.error(
+        `❌ [Job ${job.id}] Non-retryable media error for ${videoId}:`,
+        err,
+      );
+      const exists = await checkVideoExists(pool, videoId).catch(() => false);
+      if (exists) {
+        await updateVideoStatus(pool, videoId, "error").catch(console.error);
+        await pubClient
+          .publish(
+            "video.status_changed",
+            JSON.stringify({
+              videoId,
+              status: "error",
+              detail: "Invalid or unsupported source media",
+            }),
+          )
+          .catch(console.error);
+      }
+      return; // Do not throw -> prevent retries for deterministic bad input
+    }
+
+    logStructured({
+      stage: "job_error",
+      videoId,
+      jobId: job.id,
+      queueName,
+      retryable: true,
+      cause: err instanceof Error ? err.message : String(err),
+    });
     console.error(`❌ [Job ${job.id}] Failed:`, err);
     // Only set error status if not already deleted
     const exists = await checkVideoExists(pool, videoId).catch(() => false);
@@ -401,7 +541,7 @@ const workers = contexts.map(
   (ctx) =>
     new Worker<TranscodeJobData>(
       ctx.queueName,
-      (job) => processJob(job, ctx.pool, ctx.driveFolderId),
+      (job) => processJob(job, ctx.pool, ctx.driveFolderId, ctx.queueName),
       { connection: redisConnection, concurrency: 1, lockDuration: 600 * 1000 }, // 10 minutes
     ),
 );
@@ -425,6 +565,16 @@ contexts.forEach((ctx) => {
   );
 });
 console.log(`   Temp dir: ${TEMP_BASE}`);
+logStructured({
+  stage: "worker_boot",
+  cpuCount: os.cpus().length,
+  totalMemBytes: os.totalmem(),
+  tempBase: TEMP_BASE,
+  lockDurationMs: 600 * 1000,
+  bullConcurrency: 1,
+  ffmpegPath: process.env.FFMPEG_PATH ?? null,
+  storageType: process.env.STORAGE_TYPE ?? "DRIVE",
+});
 
 // Graceful shutdown
 const shutdown = async () => {

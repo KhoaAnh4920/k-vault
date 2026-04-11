@@ -3,6 +3,13 @@ import * as fs from 'fs';
 import ffmpeg from 'fluent-ffmpeg';
 import { CodecDetector } from './codec-detector';
 import { QualityPreset } from './quality';
+import { logStructured } from '../structured-log';
+
+export interface TranscodeLogContext {
+  videoId?: string;
+  jobId?: string | number;
+  queueName?: string;
+}
 
 export interface TranscodeResult {
   hlsBaseDir: string;
@@ -16,6 +23,8 @@ interface CodecProfile {
   outputOptions: string[];
 }
 
+const VAAPI_RENDER_NODE = process.env.VAAPI_DEVICE ?? '/dev/dri/renderD128';
+
 // Codec-specific FFmpeg option set
 function buildCodecProfile(codec: string): CodecProfile {
   switch (codec) {
@@ -28,14 +37,16 @@ function buildCodecProfile(codec: string): CodecProfile {
     case 'h264_qsv':
       return {
         inputOptions: [],
-        scaleFilter: (h) => `vpp_qsv=h=${h}:w=-2`,
+        // vpp_qsv does not accept scale's -2 auto-width sentinel on some Linux builds.
+        // Use software scale to keep aspect ratio and force even width, then encode via QSV.
+        scaleFilter: (h) => `scale=-2:${h}`,
         outputOptions: ['-preset', 'veryfast', '-global_quality', '25'],
       };
     case 'h264_vaapi':
       return {
         inputOptions: [
           '-hwaccel', 'vaapi',
-          '-hwaccel_device', '/dev/dri/renderD128',
+          '-hwaccel_device', VAAPI_RENDER_NODE,
           '-hwaccel_output_format', 'vaapi',
         ],
         scaleFilter: (h) => `scale_vaapi=w=-2:h=${h}`,
@@ -133,6 +144,7 @@ async function transcodeQuality(
   codec: string,
   segmentTime: number,
   onProgress?: (percent: number) => void,
+  logContext?: TranscodeLogContext,
 ): Promise<number> {
   try {
     return await transcodeQualityWithCodec(
@@ -140,6 +152,13 @@ async function transcodeQuality(
     );
   } catch (err: any) {
     if (err.isHardwareFail) {
+      logStructured({
+        stage: 'transcode_hw_fallback',
+        codec,
+        quality: quality.name,
+        message: 'Hardware encoder failed; retrying with libx264',
+        ...logContext,
+      });
       console.warn(`Hardware encoder ${codec} failed for ${quality.name}; falling back to libx264`);
       return transcodeQualityWithCodec(
         inputPath, outputDir, quality, 'libx264', segmentTime, onProgress,
@@ -158,8 +177,18 @@ export async function transcodeToHls(
   onQualityStart?: (name: string) => Promise<void>,
   onProgress?: (percent: number) => void | Promise<void>,
   segmentTime = 6,
+  logContext?: TranscodeLogContext,
 ): Promise<TranscodeResult> {
   const codec = await codecDetector.detect();
+
+  logStructured({
+    stage: 'transcode_plan',
+    codec,
+    segmentTime,
+    parallelQualityTiers: qualities.length,
+    qualityNames: qualities.map((q) => q.name),
+    ...logContext,
+  });
 
   if (onQualityStart) await onQualityStart('Initializing transcoding...');
 
@@ -174,20 +203,44 @@ export async function transcodeToHls(
 
   const results = await Promise.all(
     qualities.map(async (quality) => {
+      logStructured({
+        stage: 'transcode_tier_start',
+        codec,
+        quality: quality.name,
+        height: quality.height,
+        videoBitrate: quality.videoBitrate,
+        ...logContext,
+      });
       if (onQualityStart) await onQualityStart(quality.name);
       const qualityDir = path.join(outputBaseDir, quality.name);
       fs.mkdirSync(qualityDir, { recursive: true });
 
-      return transcodeQuality(inputPath, qualityDir, quality, codec, segmentTime, (p) => {
-        progressMap.set(quality.name, p);
-        notifyProgress();
-      });
+      return transcodeQuality(
+        inputPath,
+        qualityDir,
+        quality,
+        codec,
+        segmentTime,
+        (p) => {
+          progressMap.set(quality.name, p);
+          notifyProgress();
+        },
+        logContext,
+      );
     }),
   );
 
+  const durationSeconds = Math.max(0, ...results);
+  logStructured({
+    stage: 'transcode_hls_done',
+    codec,
+    durationSeconds,
+    ...logContext,
+  });
+
   return {
     hlsBaseDir: outputBaseDir,
-    durationSeconds: Math.max(0, ...results),
+    durationSeconds,
     qualities,
   };
 }
