@@ -19,18 +19,23 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
     // Database — Neon Postgres via TypeORM
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (config: ConfigService) => ({
-        type: 'postgres',
-        url: config.get<string>('DATABASE_URL'),
-        ssl:
-          config.get<string>('NODE_ENV') === 'production'
-            ? { rejectUnauthorized: false }
-            : false,
-        entities: [Video, VideoChunk],
-        //synchronize: config.get<string>('NODE_ENV') !== 'production',
-        synchronize: true,
-        logging: config.get<string>('NODE_ENV') === 'development',
-      }),
+      useFactory: (config: ConfigService) => {
+        const dbUrl = config.get<string>('DATABASE_URL') || '';
+        const isLocal =
+          dbUrl.includes('localhost') || dbUrl.includes('100.70.');
+
+        return {
+          type: 'postgres',
+          url: dbUrl,
+          ssl:
+            config.get<string>('NODE_ENV') === 'production' && !isLocal
+              ? { rejectUnauthorized: false }
+              : false,
+          entities: [Video, VideoChunk],
+          synchronize: true,
+          logging: config.get<string>('NODE_ENV') === 'development',
+        };
+      },
       inject: [ConfigService],
     }),
 

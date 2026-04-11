@@ -1,9 +1,14 @@
 import { Pool } from "pg";
 
 export function createPool(connectionString: string): Pool {
+  const isLocal =
+    connectionString.includes("localhost") ||
+    connectionString.includes("100.70.");
+
   return new Pool({
     connectionString,
-    ssl: process.env.NODE_ENV === 'production'
+    ssl:
+      process.env.NODE_ENV === "production" && !isLocal
         ? { rejectUnauthorized: false }
         : false,
     max: 5,
