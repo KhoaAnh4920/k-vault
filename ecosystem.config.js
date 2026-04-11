@@ -3,7 +3,7 @@ module.exports = {
     {
       name: "kvault-backend",
       cwd: "./apps/backend",
-      script: "dist/main.js",
+      script: "dist/src/main.js",
       instances: 1,
       autorestart: true,
       watch: false,
