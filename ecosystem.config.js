@@ -2,7 +2,8 @@ module.exports = {
   apps: [
     {
       name: "kvault-backend",
-      script: "apps/backend/dist/main.js",
+      cwd: "./apps/backend",
+      script: "dist/main.js",
       instances: 1,
       autorestart: true,
       watch: false,
@@ -13,7 +14,8 @@ module.exports = {
     },
     {
       name: "kvault-worker",
-      script: "apps/worker/dist/main.js",
+      cwd: "./apps/worker",
+      script: "dist/main.js",
       instances: 1,
       autorestart: true,
       watch: false,

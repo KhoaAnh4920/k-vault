@@ -29,8 +29,7 @@ jobs:
 
       - name: Build Backend & Worker
         run: |
-          pnpm --filter backend build
-          pnpm --filter worker build
+          pnpm -r build
 
       - name: Inject Environment Variables
         run: |
