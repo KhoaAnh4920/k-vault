@@ -283,11 +283,10 @@ export default function WatchPage() {
   const { data: session, status: sessionStatus } = useSession();
   const accessToken = session?.access_token ?? null;
 
-  // Always hold the latest token in a ref so xhrSetup never captures a stale value
-  const tokenRef = useRef<string | null>(null);
-  useEffect(() => {
-    tokenRef.current = accessToken;
-  }, [accessToken]);
+  // Always hold the latest token in a ref so xhrSetup never captures a stale value.
+  // Update it immediately during render so it's ready for the synchronous onProviderChange and XHR setup.
+  const tokenRef = useRef<string | null>(accessToken);
+  tokenRef.current = accessToken;
 
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);

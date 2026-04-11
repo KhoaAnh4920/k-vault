@@ -18,7 +18,11 @@ import { Observable, fromEvent } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { VideoService } from './video.service';
-import { CreateVideoDto, InitUploadDto, UpdateVideoMetadataDto } from './dto/video.dto';
+import {
+  CreateVideoDto,
+  InitUploadDto,
+  UpdateVideoMetadataDto,
+} from './dto/video.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles, Role } from '../auth/roles.decorator';
@@ -69,7 +73,7 @@ export class VideoController {
   ) {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 12;
-    
+
     let sortBy = 'createdAt';
     let sortOrder: 'ASC' | 'DESC' = 'DESC';
     if (sort === 'oldest') {
@@ -87,7 +91,7 @@ export class VideoController {
       limitNum,
       search,
       sortBy,
-      sortOrder
+      sortOrder,
     );
   }
 

@@ -3,7 +3,11 @@ import { VideoQueryService } from './video.query.service';
 import { VideoCommandService } from './video.command.service';
 import { Video, VideoStatus } from './entities/video.entity';
 import { VideoChunk } from './entities/video-chunk.entity';
-import { CreateVideoDto, InitUploadDto, UpdateVideoMetadataDto } from './dto/video.dto';
+import {
+  CreateVideoDto,
+  InitUploadDto,
+  UpdateVideoMetadataDto,
+} from './dto/video.dto';
 import type { AuthUser } from '../auth/jwt.strategy';
 
 /** Facade service retaining the old interface for controllers */
@@ -31,7 +35,15 @@ export class VideoService {
     sortBy?: string,
     sortOrder?: 'ASC' | 'DESC',
   ): Promise<{ data: Video[]; hasMore: boolean; total: number }> {
-    return this.queryService.findAll(category, user, page, limit, search, sortBy, sortOrder);
+    return this.queryService.findAll(
+      category,
+      user,
+      page,
+      limit,
+      search,
+      sortBy,
+      sortOrder,
+    );
   }
 
   async findOne(id: string, user?: AuthUser): Promise<Video> {
