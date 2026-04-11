@@ -180,10 +180,7 @@ async function processJob(
 
       const now = Date.now();
       const forceDraw = progress >= 100;
-      if (
-        !forceDraw &&
-        now - lastProgressTTYDraw < PROGRESS_TTY_MIN_MS
-      ) {
+      if (!forceDraw && now - lastProgressTTYDraw < PROGRESS_TTY_MIN_MS) {
         return;
       }
       lastProgressTTYDraw = now;
@@ -409,7 +406,8 @@ async function processJob(
 
         for (const chunk of allChunks) {
           if (chunk.quality === q.name && chunk.filename.endsWith(".ts")) {
-            const actualDuration = durationsMap.get(chunk.filename);
+            const originalFilename = chunk.filename.replace(`${q.name}_`, "");
+            const actualDuration = durationsMap.get(originalFilename);
             if (actualDuration !== undefined) {
               (chunk as any).durationSeconds = actualDuration;
             }
