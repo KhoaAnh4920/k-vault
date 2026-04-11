@@ -71,7 +71,6 @@ function LoginForm() {
                 <span>{error}</span>
               </div>
             )}
-
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <label
@@ -111,11 +110,7 @@ function LoginForm() {
                 />
               </div>
 
-              <Button
-                type="submit"
-                disabled={loading}
-                className="w-full mt-2"
-              >
+              <Button type="submit" disabled={loading} className="w-full mt-2">
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
