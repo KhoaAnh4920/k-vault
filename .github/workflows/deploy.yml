@@ -33,13 +33,6 @@ jobs:
           pnpm --filter kvault-backend build
           pnpm --filter kvault-worker build
 
-      - name: Check dist directory
-        run: |
-          echo "=== BACKEND DIST DIRECTORY ==="
-          ls -la apps/backend/dist/ || echo "Backend dist directory does not exist"
-          echo "=== INSIDE SRC (IF ANY) ==="
-          ls -la apps/backend/dist/src/ || echo "No src directory"
-
       - name: Inject Environment Variables
         run: |
           cp ~/kvault-secrets/.env.backend apps/backend/.env
