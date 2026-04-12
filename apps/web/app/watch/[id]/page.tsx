@@ -20,7 +20,13 @@ import "@vidstack/react/player/styles/default/layouts/video.css";
 import { videoApi, type Video } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, AlertTriangle, ArrowLeft, Share2, Settings } from "lucide-react";
+import {
+  Loader2,
+  AlertTriangle,
+  ArrowLeft,
+  Share2,
+  Settings,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -37,20 +43,26 @@ function ExpandableDescription({
   createdAt: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  
-  const viewStr = new Intl.NumberFormat("en-US", { notation: "compact" }).format(views) + " views";
-  const dateStr = new Date(createdAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
-  
+
+  const viewStr =
+    new Intl.NumberFormat("en-US", { notation: "compact" }).format(views) +
+    " views";
+  const dateStr = new Date(createdAt).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+
   if (!text) {
-     return (
-       <div className="mt-4 bg-accent/30 p-3 rounded-xl border border-border/30">
-         <div className="flex items-center gap-2 mb-1 text-sm font-semibold text-foreground">
-           <span>{viewStr}</span>
-           <span>•</span>
-           <span>{dateStr}</span>
-         </div>
-       </div>
-     );
+    return (
+      <div className="mt-4 bg-accent/30 p-3 rounded-xl border border-border/30">
+        <div className="flex items-center gap-2 mb-1 text-sm font-semibold text-foreground">
+          <span>{viewStr}</span>
+          <span>•</span>
+          <span>{dateStr}</span>
+        </div>
+      </div>
+    );
   }
 
   const regex = /\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b/g;
@@ -69,7 +81,10 @@ function ExpandableDescription({
     parts.push(
       <button
         key={match.index}
-        onClick={(e) => { e.stopPropagation(); onSeek(totalSeconds); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSeek(totalSeconds);
+        }}
         className="text-primary hover:underline font-bold bg-primary/10 px-1 rounded mx-0.5 transition-colors"
       >
         {timeStr}
@@ -82,7 +97,7 @@ function ExpandableDescription({
   }
 
   return (
-    <div 
+    <div
       className="mt-4 bg-accent/30 hover:bg-accent/50 transition-colors p-3 rounded-xl cursor-pointer border border-border/30"
       onClick={() => setExpanded(!expanded)}
     >
@@ -91,7 +106,12 @@ function ExpandableDescription({
         <span>•</span>
         <span>{dateStr}</span>
       </div>
-      <div className={cn("text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed", !expanded && "line-clamp-2")}>
+      <div
+        className={cn(
+          "text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed",
+          !expanded && "line-clamp-2",
+        )}
+      >
         {parts}
       </div>
       <button className="text-foreground font-semibold text-sm mt-2">
@@ -110,7 +130,10 @@ function RelatedVideoCard({ video }: { video: Video }) {
   };
 
   return (
-    <Link href={`/watch/${video.id}`} className="group flex flex-col sm:flex-row gap-3 w-full items-start">
+    <Link
+      href={`/watch/${video.id}`}
+      className="group flex flex-col sm:flex-row gap-3 w-full items-start"
+    >
       <div className="relative aspect-video w-full sm:w-40 shrink-0 rounded-lg overflow-hidden bg-muted border border-border/40">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -132,8 +155,15 @@ function RelatedVideoCard({ video }: { video: Video }) {
           {video.category || "General"}
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {new Intl.NumberFormat("en-US", { notation: "compact" }).format(video.views)} views •{" "}
-          {new Date(video.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+          {new Intl.NumberFormat("en-US", { notation: "compact" }).format(
+            video.views,
+          )}{" "}
+          views •{" "}
+          {new Date(video.createdAt).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          })}
         </p>
       </div>
     </Link>
@@ -164,23 +194,47 @@ function UpNextOverlay({
 }) {
   return (
     <div className="absolute bottom-16 right-4 sm:bottom-24 sm:right-8 bg-background/95 backdrop-blur-xl border border-border pb-3 pt-3 pl-3 pr-4 rounded-xl shadow-2xl z-50 flex items-center gap-4 w-72 animate-in slide-in-from-right-8 fade-in duration-300">
-       <div className="relative aspect-video w-24 shrink-0 rounded-md overflow-hidden bg-black border border-border/40">
-         {/* eslint-disable-next-line @next/next/no-img-element */}
-         <img src={videoApi.getThumbnailUrl(nextVideo.id)} alt="" className="w-full h-full object-cover" />
-       </div>
-       <div className="flex-1 min-w-0">
-          <p className="text-[11px] text-muted-foreground font-semibold mb-0.5 uppercase tracking-wider">Up Next in {countdown}s</p>
-          <p className="text-sm font-bold text-foreground line-clamp-2 leading-tight">{nextVideo.title}</p>
-          <div className="flex items-center gap-3 mt-2.5">
-            <button onClick={onCancel} className="text-xs text-muted-foreground font-semibold hover:text-foreground transition-colors">Cancel</button>
-            <Link href={`/watch/${nextVideo.id}`} className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-full font-bold ml-auto shadow-sm hover:opacity-90 transition-opacity">Play</Link>
-          </div>
-       </div>
+      <div className="relative aspect-video w-24 shrink-0 rounded-md overflow-hidden bg-black border border-border/40">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={videoApi.getThumbnailUrl(nextVideo.id)}
+          alt=""
+          className="w-full h-full object-cover"
+        />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[11px] text-muted-foreground font-semibold mb-0.5 uppercase tracking-wider">
+          Up Next in {countdown}s
+        </p>
+        <p className="text-sm font-bold text-foreground line-clamp-2 leading-tight">
+          {nextVideo.title}
+        </p>
+        <div className="flex items-center gap-3 mt-2.5">
+          <button
+            onClick={onCancel}
+            className="text-xs text-muted-foreground font-semibold hover:text-foreground transition-colors"
+          >
+            Cancel
+          </button>
+          <Link
+            href={`/watch/${nextVideo.id}`}
+            className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-full font-bold ml-auto shadow-sm hover:opacity-90 transition-opacity"
+          >
+            Play
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }
 
-function AmbientBackground({ playerRef, enabled }: { playerRef: React.RefObject<MediaPlayerInstance | null>; enabled: boolean }) {
+function AmbientBackground({
+  playerRef,
+  enabled,
+}: {
+  playerRef: React.RefObject<MediaPlayerInstance | null>;
+  enabled: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -216,11 +270,11 @@ function AmbientBackground({ playerRef, enabled }: { playerRef: React.RefObject<
   if (!enabled) return null;
 
   return (
-    <canvas 
-      ref={canvasRef} 
-      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] object-cover opacity-40 pointer-events-none transition-opacity duration-1000 -z-10" 
+    <canvas
+      ref={canvasRef}
+      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] object-cover opacity-40 pointer-events-none transition-opacity duration-1000 -z-10"
       style={{ filter: "blur(80px)" }}
-      aria-hidden="true" 
+      aria-hidden="true"
     />
   );
 }
@@ -234,7 +288,14 @@ interface PlayerSettingsProps {
   setAmbient: (val: boolean) => void;
 }
 
-function PlayerSettingsMenu({ autoplay, setAutoplay, loop, setLoop, ambient, setAmbient }: PlayerSettingsProps) {
+function PlayerSettingsMenu({
+  autoplay,
+  setAutoplay,
+  loop,
+  setLoop,
+  ambient,
+  setAmbient,
+}: PlayerSettingsProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -249,29 +310,49 @@ function PlayerSettingsMenu({ autoplay, setAutoplay, loop, setLoop, ambient, set
   }, []);
 
   return (
-    <div className="absolute top-4 right-4 z-50 pointer-events-auto" ref={menuRef}>
-      <button 
+    <div
+      className="absolute top-4 right-4 z-50 pointer-events-auto"
+      ref={menuRef}
+    >
+      <button
         onClick={() => setOpen(!open)}
         className="bg-black/40 hover:bg-black/60 text-white p-2 flex rounded-full backdrop-blur-md transition-all h-9 w-9 items-center justify-center shadow-lg border border-white/10"
       >
-        <Settings className={`w-5 h-5 transition-transform duration-300 ${open ? 'rotate-90' : ''}`} />
+        <Settings
+          className={`w-5 h-5 transition-transform duration-300 ${open ? "rotate-90" : ""}`}
+        />
       </button>
 
       {open && (
-         <div className="absolute top-full right-0 mt-3 w-56 bg-black/85 backdrop-blur-xl border border-white/15 rounded-xl shadow-2xl p-2 animate-in fade-in zoom-in duration-200 origin-top-right">
-            <label className="flex items-center justify-between w-full px-3 py-2.5 hover:bg-white/10 rounded-lg cursor-pointer group transition-colors">
-               <span className="text-white text-sm font-medium">Autoplay</span>
-               <input type="checkbox" checked={autoplay} onChange={e => setAutoplay(e.target.checked)} className="accent-primary w-4 h-4 scale-110" />
-            </label>
-            <label className="flex items-center justify-between w-full px-3 py-2.5 hover:bg-white/10 rounded-lg cursor-pointer group transition-colors">
-               <span className="text-white text-sm font-medium">Loop</span>
-               <input type="checkbox" checked={loop} onChange={e => setLoop(e.target.checked)} className="accent-primary w-4 h-4 scale-110" />
-            </label>
-            <label className="flex items-center justify-between w-full px-3 py-2.5 hover:bg-white/10 rounded-lg cursor-pointer group transition-colors">
-               <span className="text-white text-sm font-medium">Ambient Mode</span>
-               <input type="checkbox" checked={ambient} onChange={e => setAmbient(e.target.checked)} className="accent-primary w-4 h-4 scale-110" />
-            </label>
-         </div>
+        <div className="absolute top-full right-0 mt-3 w-56 bg-black/85 backdrop-blur-xl border border-white/15 rounded-xl shadow-2xl p-2 animate-in fade-in zoom-in duration-200 origin-top-right">
+          <label className="flex items-center justify-between w-full px-3 py-2.5 hover:bg-white/10 rounded-lg cursor-pointer group transition-colors">
+            <span className="text-white text-sm font-medium">Autoplay</span>
+            <input
+              type="checkbox"
+              checked={autoplay}
+              onChange={(e) => setAutoplay(e.target.checked)}
+              className="accent-primary w-4 h-4 scale-110"
+            />
+          </label>
+          <label className="flex items-center justify-between w-full px-3 py-2.5 hover:bg-white/10 rounded-lg cursor-pointer group transition-colors">
+            <span className="text-white text-sm font-medium">Loop</span>
+            <input
+              type="checkbox"
+              checked={loop}
+              onChange={(e) => setLoop(e.target.checked)}
+              className="accent-primary w-4 h-4 scale-110"
+            />
+          </label>
+          <label className="flex items-center justify-between w-full px-3 py-2.5 hover:bg-white/10 rounded-lg cursor-pointer group transition-colors">
+            <span className="text-white text-sm font-medium">Ambient Mode</span>
+            <input
+              type="checkbox"
+              checked={ambient}
+              onChange={(e) => setAmbient(e.target.checked)}
+              className="accent-primary w-4 h-4 scale-110"
+            />
+          </label>
+        </div>
       )}
     </div>
   );
@@ -292,13 +373,13 @@ export default function WatchPage() {
   const [loading, setLoading] = useState(true);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [startTime, setStartTime] = useState(0);
-  
+
   const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(true);
   const [fetchingMoreRelated, setFetchingMoreRelated] = useState(false);
   const [relatedPage, setRelatedPage] = useState(1);
   const [hasMoreRelated, setHasMoreRelated] = useState(false);
-  
+
   const [autoplay, setAutoplay] = useState(true);
   const [loop, setLoop] = useState(false);
   const [ambient, setAmbient] = useState(true);
@@ -329,9 +410,10 @@ export default function WatchPage() {
       .get(id)
       .then((v) => {
         setVideo(v);
-        
+
         // Fetch related videos
-        videoApi.list({ category: v.category || undefined, limit: 12, page: 1 })
+        videoApi
+          .list({ category: v.category || undefined, limit: 12, page: 1 })
           .then((res) => {
             setRelatedVideos(res.data.filter((rv) => rv.id !== v.id));
             setHasMoreRelated(res.hasMore);
@@ -344,7 +426,10 @@ export default function WatchPage() {
           const history = JSON.parse(
             localStorage.getItem("k-vault-history") || "[]",
           );
-          const found = history.find((h: { videoId: string; progress: number; timestamp: number }) => h.videoId === v.id);
+          const found = history.find(
+            (h: { videoId: string; progress: number; timestamp: number }) =>
+              h.videoId === v.id,
+          );
           // If video isn't finished (leave 5 seconds margin), resume from last position
           if (
             found &&
@@ -364,7 +449,11 @@ export default function WatchPage() {
   const { ref: loadMoreRef, inView } = useInView({ threshold: 0.1 });
 
   const fetchMoreRelated = useCallback(
-    async (pageNum: number, category: string | undefined, currentId: string) => {
+    async (
+      pageNum: number,
+      category: string | undefined,
+      currentId: string,
+    ) => {
       setFetchingMoreRelated(true);
       try {
         const res = await videoApi.list({ page: pageNum, limit: 12, category });
@@ -381,16 +470,30 @@ export default function WatchPage() {
         setFetchingMoreRelated(false);
       }
     },
-    []
+    [],
   );
 
   useEffect(() => {
-    if (inView && hasMoreRelated && !loadingRelated && !fetchingMoreRelated && video) {
+    if (
+      inView &&
+      hasMoreRelated &&
+      !loadingRelated &&
+      !fetchingMoreRelated &&
+      video
+    ) {
       const next = relatedPage + 1;
       setRelatedPage(next);
       void fetchMoreRelated(next, video.category || undefined, video.id);
     }
-  }, [inView, hasMoreRelated, loadingRelated, fetchingMoreRelated, relatedPage, video, fetchMoreRelated]);
+  }, [
+    inView,
+    hasMoreRelated,
+    loadingRelated,
+    fetchingMoreRelated,
+    relatedPage,
+    video,
+    fetchMoreRelated,
+  ]);
 
   // Provide Auth Token to HLS.js
   // Reads from tokenRef so the closure never goes stale — token always current.
@@ -415,47 +518,47 @@ export default function WatchPage() {
   );
 
   // Track playback time safely (throttled locally, saved globally)
-  const handleTimeUpdate = useCallback(
-    (detail: { currentTime: number }) => {
-      if (!video) return;
-      
-      const dur = playerRef.current?.state.duration || 0;
-      if (dur > 0) {
-        const rem = Math.ceil(dur - detail.currentTime);
-        if (rem <= 10 && autoplay && !loop && relatedVideos.length > 0) {
-          if (!showUpNext) setShowUpNext(true);
-          setCountdown(Math.max(0, rem));
-          if (rem <= 0 && relatedVideos[0]) {
-             // Auto navigate when reaching exactly 0
-             router.push(`/watch/${relatedVideos[0].id}`);
-          }
-        } else {
-          if (showUpNext) setShowUpNext(false);
-        }
-      }
+  // const handleTimeUpdate = useCallback(
+  //   (detail: { currentTime: number }) => {
+  //     if (!video) return;
 
-      try {
-        const historyStr = localStorage.getItem("k-vault-history") || "[]";
-        let history = JSON.parse(historyStr);
-        history = history.filter((h: { videoId: string; progress: number; timestamp: number }) => h.videoId !== video.id);
+  //     const dur = playerRef.current?.state.duration || 0;
+  //     if (dur > 0) {
+  //       const rem = Math.ceil(dur - detail.currentTime);
+  //       if (rem <= 10 && autoplay && !loop && relatedVideos.length > 0) {
+  //         if (!showUpNext) setShowUpNext(true);
+  //         setCountdown(Math.max(0, rem));
+  //         if (rem <= 0 && relatedVideos[0]) {
+  //            // Auto navigate when reaching exactly 0
+  //            router.push(`/watch/${relatedVideos[0].id}`);
+  //         }
+  //       } else {
+  //         if (showUpNext) setShowUpNext(false);
+  //       }
+  //     }
 
-        // Save current progress
-        history.push({
-          videoId: video.id,
-          progress: detail.currentTime,
-          timestamp: Date.now(),
-        });
+  //     try {
+  //       const historyStr = localStorage.getItem("k-vault-history") || "[]";
+  //       let history = JSON.parse(historyStr);
+  //       history = history.filter((h: { videoId: string; progress: number; timestamp: number }) => h.videoId !== video.id);
 
-        // Keep only last 100 watched videos
-        if (history.length > 100) history.shift();
+  //       // Save current progress
+  //       history.push({
+  //         videoId: video.id,
+  //         progress: detail.currentTime,
+  //         timestamp: Date.now(),
+  //       });
 
-        localStorage.setItem("k-vault-history", JSON.stringify(history));
-      } catch {
-        // Ignored
-      }
-    },
-    [video, autoplay, loop, relatedVideos, showUpNext, router],
-  );
+  //       // Keep only last 100 watched videos
+  //       if (history.length > 100) history.shift();
+
+  //       localStorage.setItem("k-vault-history", JSON.stringify(history));
+  //     } catch {
+  //       // Ignored
+  //     }
+  //   },
+  //   [video, autoplay, loop, relatedVideos, showUpNext, router],
+  // );
 
   const handleEnded = useCallback(() => {
     if (loop && playerRef.current) {
@@ -503,15 +606,20 @@ export default function WatchPage() {
 
           {video.status === "ready" ? (
             <div className="relative mb-4 sm:mb-6">
-              {ambient && <AmbientBackground playerRef={playerRef} enabled={ambient} />}
-              
+              {ambient && (
+                <AmbientBackground playerRef={playerRef} enabled={ambient} />
+              )}
+
               <div className="rounded-xl overflow-hidden shadow-2xl shadow-black/80 bg-black relative z-10 border border-border/10 group">
                 {/* Floating Player Settings Gear */}
                 <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300">
                   <PlayerSettingsMenu
-                    autoplay={autoplay} setAutoplay={setAutoplay}
-                    loop={loop} setLoop={setLoop}
-                    ambient={ambient} setAmbient={setAmbient}
+                    autoplay={autoplay}
+                    setAutoplay={setAutoplay}
+                    loop={loop}
+                    setLoop={setLoop}
+                    ambient={ambient}
+                    setAmbient={setAmbient}
                   />
                 </div>
 
@@ -530,7 +638,7 @@ export default function WatchPage() {
                     poster={videoApi.getThumbnailUrl(id)}
                     autoplay
                     currentTime={startTime}
-                    onTimeUpdate={handleTimeUpdate}
+                    // onTimeUpdate={handleTimeUpdate}
                     onEnded={handleEnded}
                     playsInline
                     onProviderChange={handleProviderChange}
@@ -571,11 +679,14 @@ export default function WatchPage() {
 
               {/* UpNext Overlay */}
               {showUpNext && relatedVideos.length > 0 && relatedVideos[0] && (
-                 <UpNextOverlay 
-                   nextVideo={relatedVideos[0]} 
-                   countdown={countdown} 
-                   onCancel={() => { setShowUpNext(false); setAutoplay(false); }} 
-                 />
+                <UpNextOverlay
+                  nextVideo={relatedVideos[0]}
+                  countdown={countdown}
+                  onCancel={() => {
+                    setShowUpNext(false);
+                    setAutoplay(false);
+                  }}
+                />
               )}
             </div>
           ) : (
@@ -588,15 +699,17 @@ export default function WatchPage() {
                       Transcoding in progress...
                     </p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      This may take a few minutes. Start the local worker on your
-                      Mac.
+                      This may take a few minutes. Start the local worker on
+                      your Mac.
                     </p>
                   </div>
                 </>
               ) : (
                 <>
                   <AlertTriangle className="w-12 h-12 text-destructive mb-2" />
-                  <p className="m-0 text-muted-foreground">Transcoding failed</p>
+                  <p className="m-0 text-muted-foreground">
+                    Transcoding failed
+                  </p>
                 </>
               )}
             </div>
@@ -608,19 +721,24 @@ export default function WatchPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-foreground">
             {video.title}
           </h1>
-          
+
           <div className="flex items-center justify-between mt-3 flex-wrap gap-4">
             <div className="flex items-center gap-3">
-               {/* Could add author avatar here in future */}
+              {/* Could add author avatar here in future */}
             </div>
-            
+
             <div className="flex items-center gap-2">
-              <Button onClick={handleShare} variant="secondary" className="rounded-full shadow-sm text-sm font-semibold h-9" size="sm">
+              <Button
+                onClick={handleShare}
+                variant="secondary"
+                className="rounded-full shadow-sm text-sm font-semibold h-9"
+                size="sm"
+              >
                 <Share2 className="w-4 h-4 mr-2" /> Share
               </Button>
             </div>
           </div>
-          
+
           <ExpandableDescription
             text={video.description}
             onSeek={handleSeek}
@@ -635,18 +753,24 @@ export default function WatchPage() {
         <h2 className="text-lg font-bold">Related Videos</h2>
         <div className="flex flex-col gap-3">
           {loadingRelated ? (
-             Array.from({ length: 8 }).map((_, i) => <RelatedVideoSkeleton key={i} />)
+            Array.from({ length: 8 }).map((_, i) => (
+              <RelatedVideoSkeleton key={i} />
+            ))
           ) : relatedVideos.length > 0 ? (
-             <>
-               {relatedVideos.map(rv => <RelatedVideoCard key={rv.id} video={rv} />)}
-               {hasMoreRelated && (
-                 <div ref={loadMoreRef} className="py-4 flex justify-center">
-                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                 </div>
-               )}
-             </>
+            <>
+              {relatedVideos.map((rv) => (
+                <RelatedVideoCard key={rv.id} video={rv} />
+              ))}
+              {hasMoreRelated && (
+                <div ref={loadMoreRef} className="py-4 flex justify-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              )}
+            </>
           ) : (
-             <p className="text-sm text-muted-foreground">No related videos found.</p>
+            <p className="text-sm text-muted-foreground">
+              No related videos found.
+            </p>
           )}
         </div>
       </div>
