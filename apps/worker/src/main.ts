@@ -149,14 +149,21 @@ async function processJob(
       tempDir: jobDir,
     });
 
-    let lastProgressTTYDraw = 0;
-    const PROGRESS_TTY_MIN_MS = 250;
+    let lastProgressDraw = 0;
+    const PROGRESS_MIN_MS = 250;
 
     const reportProgress = async (progress: number, detail?: string) => {
       await pubClient.publish(
         "video.status_changed",
         JSON.stringify({ videoId, status: "processing", progress, detail }),
       );
+
+      const now = Date.now();
+      const forceDraw = progress >= 100;
+      if (!forceDraw && now - lastProgressDraw < PROGRESS_MIN_MS) {
+        return;
+      }
+      lastProgressDraw = now;
 
       const barLength = 20;
       const filledLength = Math.floor((progress / 100) * barLength);
@@ -174,16 +181,9 @@ async function processJob(
           : rawLine;
 
       if (!process.stdout.isTTY) {
-        console.log(line);
+        process.stdout.write(`\r\x1b[K${line}`);
         return;
       }
-
-      const now = Date.now();
-      const forceDraw = progress >= 100;
-      if (!forceDraw && now - lastProgressTTYDraw < PROGRESS_TTY_MIN_MS) {
-        return;
-      }
-      lastProgressTTYDraw = now;
 
       readline.cursorTo(process.stdout, 0);
       readline.clearLine(process.stdout, 0);
