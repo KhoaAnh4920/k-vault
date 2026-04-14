@@ -30,6 +30,11 @@ WORKDIR /app
 COPY --from=installer /app/ .
 # Copy the actual source code of the pruned workspace
 COPY --from=pruner /app/out/full/ .
+
+# IMPORTANT: Next.js evaluates NEXT_PUBLIC vars at build time
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-"http://localhost:3001/api"}
+
 # Next.js telemetry disable
 ENV NEXT_TELEMETRY_DISABLED=1
 # Run the build

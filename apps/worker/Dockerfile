@@ -37,15 +37,14 @@ RUN pnpm install --prod --frozen-lockfile
 FROM base AS runner
 WORKDIR /app
 
-# Install native FFmpeg and VAAPI drivers for hardware acceleration (e.g., QuickSync)
-# This allows passing --device /dev/dri:/dev/dri to Docker
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    intel-media-va-driver-non-free \
-    libmfx1 \
-    libva-drm2 \
-    vainfo \
-    && rm -rf /var/lib/apt/lists/*
+# Install native FFmpeg
+# We conditionally install Intel VAAPI drivers ONLY if building on x86_64 architecture (like the N100)
+# This prevents crashes when building on ARM64 (Apple Silicon MacBooks)
+RUN apt-get update && apt-get install -y ffmpeg && \
+    if [ "$(uname -m)" = "x86_64" ]; then \
+        apt-get install -y intel-media-va-driver vainfo || true; \
+    fi && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 worker && \
