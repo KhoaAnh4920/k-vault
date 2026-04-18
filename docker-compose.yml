@@ -1,0 +1,125 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: k_vault_user
+      POSTGRES_PASSWORD: k_vault_password
+      POSTGRES_DB: k_vault
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U k_vault_user -d k_vault"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadminpassword
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      # Inject overriding vars via Compose
+      # Keep JWT secrets and Auth0 secrets in a local .env file instead
+      - NODE_ENV=production
+      - PORT=3001
+      - API_PREFIX=api
+      - DATABASE_URL=postgres://k_vault_user:k_vault_password@postgres:5432/k_vault
+      - REDIS_URL=redis://redis:6379
+      - S3_ENDPOINT=http://minio:9000
+      - S3_REGION=us-east-1
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadminpassword
+      - S3_BUCKET_NAME=k-vault
+      - S3_PUBLIC_URL=http://localhost:9000/k-vault
+    env_file:
+      - apps/backend/.env # Pulls secrets like AUTH0_CLIENT_ID
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgres://k_vault_user:k_vault_password@postgres:5432/k_vault
+      - REDIS_URL=redis://redis:6379
+      - S3_ENDPOINT=http://minio:9000
+      - S3_REGION=us-east-1
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadminpassword
+      - S3_BUCKET_NAME=k-vault
+    env_file:
+      - apps/worker/.env
+    volumes:
+      - /tmp/k-vault:/tmp/k-vault
+    # Expose the host's GPU to the container for Intel QuickSync hardware acceleration
+    # Uncomment devices if running on Linux with Intel GPU
+    # devices:
+    #   - "/dev/dri:/dev/dri"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:3001/api
+    env_file:
+      - apps/web/.env.local
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

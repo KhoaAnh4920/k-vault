@@ -1,4 +1,9 @@
 import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
   Controller,
   Get,
   HttpCode,
@@ -15,6 +20,8 @@ import { StreamService } from './stream.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, type AuthUser } from '../auth/jwt.strategy';
 
+@ApiTags('Stream')
+@ApiBearerAuth()
 @Controller('stream')
 @UseGuards(JwtAuthGuard)
 export class StreamController {
@@ -24,6 +31,7 @@ export class StreamController {
    * GET /stream/:videoId/playlist
    * Returns the master HLS playlist for a video.
    */
+  @ApiOperation({ summary: 'Get Master HLS Playlist for video playback' })
   @Get(':videoId/playlist')
   async getPlaylist(
     @Param('videoId', ParseUUIDPipe) videoId: string,
@@ -46,6 +54,7 @@ export class StreamController {
    * Returns the variant playlist for a specific quality (e.g. 1080p, 480p, 320p).
    * Called by hls.js after parsing the master playlist.
    */
+  @ApiOperation({ summary: 'Get quality-specific variant playlist' })
   @Get(':videoId/:quality/playlist')
   async getQualityPlaylist(
     @Param('videoId', ParseUUIDPipe) videoId: string,
@@ -69,6 +78,7 @@ export class StreamController {
    * GET /stream/:videoId/thumbnail
    * Proxies the video thumbnail image from Google Drive.
    */
+  @ApiOperation({ summary: 'Stream video thumbnail image' })
   @Get(':videoId/thumbnail')
   @HttpCode(HttpStatus.OK)
   async getThumbnail(
@@ -96,6 +106,7 @@ export class StreamController {
    * GET /stream/:videoId/qualities
    * Returns the list of available quality levels for a video (e.g. ['1080p','480p','320p']).
    */
+  @ApiOperation({ summary: 'Get available video quality tiers' })
   @Get(':videoId/qualities')
   getQualities(
     @Param('videoId', ParseUUIDPipe) videoId: string,
@@ -108,6 +119,7 @@ export class StreamController {
    * GET /stream/chunk/:fileId
    * Pipes a .ts chunk stream from Google Drive — zero RAM buffering.
    */
+  @ApiOperation({ summary: 'Stream a raw .ts video chunk' })
   @Get('chunk/:fileId')
   async getChunk(
     @Param('fileId') fileId: string,

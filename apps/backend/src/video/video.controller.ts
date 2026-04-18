@@ -1,3 +1,4 @@
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   Body,
   Controller,
@@ -28,6 +29,8 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles, Role } from '../auth/roles.decorator';
 import { CurrentUser, type AuthUser } from '../auth/jwt.strategy';
 
+@ApiTags('Videos')
+@ApiBearerAuth()
 @Controller('videos')
 @UseGuards(JwtAuthGuard)
 export class VideoController {
@@ -36,6 +39,7 @@ export class VideoController {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
+  @ApiOperation({ summary: 'Subscribe to video transcoding events (SSE)' })
   @Sse('events')
   sse(): Observable<MessageEvent> {
     return fromEvent(this.eventEmitter, 'video.status_changed').pipe(
@@ -46,6 +50,7 @@ export class VideoController {
   }
 
   /** Step 1: Admin requests a resumable upload URL from Google Drive */
+  @ApiOperation({ summary: 'Initiate a new video upload' })
   @Post('upload-init')
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)
@@ -55,6 +60,7 @@ export class VideoController {
   }
 
   /** Step 2: After upload completes, register the video and enqueue transcoding */
+  @ApiOperation({ summary: 'Register the uploaded video and start processing' })
   @Post()
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)
@@ -62,6 +68,7 @@ export class VideoController {
     return this.videoService.create(dto, user.userId);
   }
 
+  @ApiOperation({ summary: 'List all videos with pagination and filters' })
   @Get()
   findAll(
     @Query('category') category?: string,
@@ -103,8 +110,10 @@ export class VideoController {
     @CurrentUser() user?: AuthUser,
   ) {
     const limitNum = limit ? parseInt(limit, 10) : 12;
-    const excludeIdsArr = excludeIds ? excludeIds.split(',').filter(Boolean) : [];
-    
+    const excludeIdsArr = excludeIds
+      ? excludeIds.split(',').filter(Boolean)
+      : [];
+
     return this.videoService.getRelated(id, limitNum, excludeIdsArr, user);
   }
 
@@ -116,6 +125,7 @@ export class VideoController {
     return this.videoService.findOne(id, user);
   }
 
+  @ApiOperation({ summary: 'Update video metadata' })
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
   update(
@@ -127,6 +137,7 @@ export class VideoController {
     return this.videoService.updateMetadata(id, user.userId, dto, isAdmin);
   }
 
+  @ApiOperation({ summary: 'Delete a video and all its files' })
   @Delete(':id')
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)
