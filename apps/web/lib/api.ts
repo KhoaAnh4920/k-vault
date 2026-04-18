@@ -139,6 +139,13 @@ export const videoApi = {
       .get<PaginatedVideos>("/videos", { params })
       .then((r) => r.data),
 
+  getRelated: (id: string, limit: number = 12, excludeIds: string[] = []) =>
+    api
+      .get<{ data: Video[]; hasMore: boolean }>(`/videos/${id}/related`, {
+        params: { limit, excludeIds: excludeIds.join(',') },
+      })
+      .then((r) => r.data),
+
   get: (id: string) => api.get<Video>(`/videos/${id}`).then((r) => r.data),
 
   initUpload: (fileName: string) =>

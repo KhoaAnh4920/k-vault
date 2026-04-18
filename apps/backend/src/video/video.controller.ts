@@ -95,6 +95,19 @@ export class VideoController {
     );
   }
 
+  @Get(':id/related')
+  getRelated(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('limit') limit?: string,
+    @Query('excludeIds') excludeIds?: string,
+    @CurrentUser() user?: AuthUser,
+  ) {
+    const limitNum = limit ? parseInt(limit, 10) : 12;
+    const excludeIdsArr = excludeIds ? excludeIds.split(',').filter(Boolean) : [];
+    
+    return this.videoService.getRelated(id, limitNum, excludeIdsArr, user);
+  }
+
   @Get(':id')
   findOne(
     @Param('id', ParseUUIDPipe) id: string,

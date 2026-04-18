@@ -411,17 +411,41 @@ export default function WatchPage() {
       .then((v) => {
         setVideo(v);
 
-        // Fetch related videos
+        // Update watch history immediately so current video is marked as watched
+        let recentHistoryIds = new Set<string>();
+        try {
+          const historyStr = localStorage.getItem("k-vault-history") || "[]";
+          let history = JSON.parse(historyStr);
+          
+          // Collect recent history IDs for related video sorting
+          history.forEach((item: any) => recentHistoryIds.add(item.videoId));
+          recentHistoryIds.add(v.id); // Add current video too
+
+          // Move current video to the end (most recent)
+          history = history.filter((h: any) => h.videoId !== v.id);
+          history.push({
+            videoId: v.id,
+            progress: 0,
+            timestamp: Date.now(),
+          });
+          if (history.length > 100) history.shift();
+          localStorage.setItem("k-vault-history", JSON.stringify(history));
+        } catch {
+          // Ignore
+        }
+
+        // Fetch related videos natively from the smart backend API
+        const arrayHistoryIds = Array.from(recentHistoryIds).slice(0, 20);
         videoApi
-          .list({ category: v.category || undefined, limit: 12, page: 1 })
+          .getRelated(v.id, 12, arrayHistoryIds)
           .then((res) => {
-            setRelatedVideos(res.data.filter((rv) => rv.id !== v.id));
+            setRelatedVideos(res.data);
             setHasMoreRelated(res.hasMore);
           })
           .catch(console.error)
           .finally(() => setLoadingRelated(false));
 
-        // Load history progress
+        // Restore start time if progress is saved
         try {
           const history = JSON.parse(
             localStorage.getItem("k-vault-history") || "[]",
@@ -433,6 +457,7 @@ export default function WatchPage() {
           // If video isn't finished (leave 5 seconds margin), resume from last position
           if (
             found &&
+            found.progress > 0 &&
             v.durationSeconds &&
             found.progress < v.durationSeconds - 5
           ) {
@@ -450,19 +475,24 @@ export default function WatchPage() {
 
   const fetchMoreRelated = useCallback(
     async (
-      pageNum: number,
-      category: string | undefined,
       currentId: string,
+      currentDisplayedIds: string[],
     ) => {
       setFetchingMoreRelated(true);
       try {
-        const res = await videoApi.list({ page: pageNum, limit: 12, category });
-        setRelatedVideos((prev) => {
-          const existingIds = new Set(prev.map((v) => v.id));
-          existingIds.add(currentId);
-          const newVideos = res.data.filter((v) => !existingIds.has(v.id));
-          return [...prev, ...newVideos];
-        });
+        // Collect history IDs (optional for further exclusion)
+        const historyStr = localStorage.getItem("k-vault-history") || "[]";
+        let historyIds: string[] = [];
+        try {
+           const historyObj = JSON.parse(historyStr);
+           historyIds = historyObj.map((h: any) => h.videoId);
+        } catch {}
+
+        // Combine history and currently displayed to ensure we get 100% fresh videos
+        const combinedExclude = Array.from(new Set([...currentDisplayedIds, ...historyIds.slice(-20)]));
+
+        const res = await videoApi.getRelated(currentId, 12, combinedExclude.slice(0, 50));
+        setRelatedVideos((prev) => [...prev, ...res.data]);
         setHasMoreRelated(res.hasMore);
       } catch (err) {
         console.error(err);
@@ -483,7 +513,7 @@ export default function WatchPage() {
     ) {
       const next = relatedPage + 1;
       setRelatedPage(next);
-      void fetchMoreRelated(next, video.category || undefined, video.id);
+      void fetchMoreRelated(video.id, relatedVideos.map(v => v.id));
     }
   }, [
     inView,
@@ -492,6 +522,7 @@ export default function WatchPage() {
     fetchingMoreRelated,
     relatedPage,
     video,
+    relatedVideos,
     fetchMoreRelated,
   ]);
 
@@ -518,47 +549,53 @@ export default function WatchPage() {
   );
 
   // Track playback time safely (throttled locally, saved globally)
-  // const handleTimeUpdate = useCallback(
-  //   (detail: { currentTime: number }) => {
-  //     if (!video) return;
+  const lastSaveRef = useRef<number>(0);
 
-  //     const dur = playerRef.current?.state.duration || 0;
-  //     if (dur > 0) {
-  //       const rem = Math.ceil(dur - detail.currentTime);
-  //       if (rem <= 10 && autoplay && !loop && relatedVideos.length > 0) {
-  //         if (!showUpNext) setShowUpNext(true);
-  //         setCountdown(Math.max(0, rem));
-  //         if (rem <= 0 && relatedVideos[0]) {
-  //            // Auto navigate when reaching exactly 0
-  //            router.push(`/watch/${relatedVideos[0].id}`);
-  //         }
-  //       } else {
-  //         if (showUpNext) setShowUpNext(false);
-  //       }
-  //     }
+  const handleTimeUpdate = useCallback(
+    (detail: { currentTime: number }) => {
+      if (!video) return;
 
-  //     try {
-  //       const historyStr = localStorage.getItem("k-vault-history") || "[]";
-  //       let history = JSON.parse(historyStr);
-  //       history = history.filter((h: { videoId: string; progress: number; timestamp: number }) => h.videoId !== video.id);
+      const dur = playerRef.current?.state.duration || 0;
+      if (dur > 0) {
+        const rem = Math.ceil(dur - detail.currentTime);
+        if (rem <= 10 && autoplay && !loop && relatedVideos.length > 0) {
+          if (!showUpNext) setShowUpNext(true);
+          setCountdown(Math.max(0, rem));
+          if (rem <= 0 && relatedVideos[0]) {
+             // Auto navigate when reaching exactly 0
+             router.push(`/watch/${relatedVideos[0].id}`);
+          }
+        } else {
+          if (showUpNext) setShowUpNext(false);
+        }
+      }
 
-  //       // Save current progress
-  //       history.push({
-  //         videoId: video.id,
-  //         progress: detail.currentTime,
-  //         timestamp: Date.now(),
-  //       });
+      const now = Date.now();
+      if (now - lastSaveRef.current > 5000) {
+        lastSaveRef.current = now;
+        try {
+          const historyStr = localStorage.getItem("k-vault-history") || "[]";
+          let history = JSON.parse(historyStr);
+          history = history.filter((h: any) => h.videoId !== video.id);
 
-  //       // Keep only last 100 watched videos
-  //       if (history.length > 100) history.shift();
+          // Save current progress
+          history.push({
+            videoId: video.id,
+            progress: detail.currentTime,
+            timestamp: now,
+          });
 
-  //       localStorage.setItem("k-vault-history", JSON.stringify(history));
-  //     } catch {
-  //       // Ignored
-  //     }
-  //   },
-  //   [video, autoplay, loop, relatedVideos, showUpNext, router],
-  // );
+          // Keep only last 100 watched videos
+          if (history.length > 100) history.shift();
+
+          localStorage.setItem("k-vault-history", JSON.stringify(history));
+        } catch {
+          // Ignored
+        }
+      }
+    },
+    [video, autoplay, loop, relatedVideos, showUpNext, router],
+  );
 
   const handleEnded = useCallback(() => {
     if (loop && playerRef.current) {
@@ -638,7 +675,7 @@ export default function WatchPage() {
                     poster={videoApi.getThumbnailUrl(id)}
                     autoplay
                     currentTime={startTime}
-                    // onTimeUpdate={handleTimeUpdate}
+                    onTimeUpdate={handleTimeUpdate}
                     onEnded={handleEnded}
                     playsInline
                     onProviderChange={handleProviderChange}
