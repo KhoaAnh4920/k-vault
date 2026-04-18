@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import ffmpeg from 'fluent-ffmpeg';
 import { CodecDetector } from './codec-detector';
+import { DeviceDetector, DeviceInfo } from './device-detector';
 import { QualityPreset } from './quality';
 import { logStructured } from '../structured-log';
 
@@ -25,20 +26,21 @@ interface CodecProfile {
 
 const VAAPI_RENDER_NODE = process.env.VAAPI_DEVICE ?? '/dev/dri/renderD128';
 
-// Codec-specific FFmpeg option set
-function buildCodecProfile(codec: string): CodecProfile {
+// Codec-specific FFmpeg option set tuned for the specific hardware
+function buildCodecProfile(codec: string, device: DeviceInfo): CodecProfile {
   switch (codec) {
     case 'h264_videotoolbox':
       return {
-        inputOptions: [],
+        // Essential: use the M1/M2/M3/M4 Media Engine for decoding too!
+        inputOptions: ['-hwaccel', 'videotoolbox'],
         scaleFilter: (h) => `scale=-2:${h}`,
-        outputOptions: [],
+        // allow_sw 1: Fallback to software if needed. realtime 0: maximize speed
+        outputOptions: ['-allow_sw', '1', '-realtime', '0'],
       };
     case 'h264_qsv':
       return {
         inputOptions: [],
         // vpp_qsv does not accept scale's -2 auto-width sentinel on some Linux builds.
-        // Use software scale to keep aspect ratio and force even width, then encode via QSV.
         scaleFilter: (h) => `scale=-2:${h}`,
         outputOptions: ['-preset', 'veryfast', '-global_quality', '25'],
       };
@@ -58,12 +60,23 @@ function buildCodecProfile(codec: string): CodecProfile {
         scaleFilter: (h) => `scale=-2:${h}`,
         outputOptions: ['-preset', 'p4', '-rc', 'vbr'],
       };
-    default: // libx264
+    default: { // libx264
+      // Smart scaling for libx264 Fallback
+      let threads = '2'; // safe default for tiny VPS
+      if (device.isAppleSilicon && device.cores > 4) {
+        threads = '0'; // Unlimited threads for M-series Macs to completely dominate decoding
+      } else if (device.cores > 2) {
+        threads = String(device.cores - 1); // Save 1 core for OS if it's a weak Mini PC
+      }
+      
+      const preset = device.isAppleSilicon && device.cores > 4 ? 'fast' : 'veryfast';
+
       return {
         inputOptions: [],
         scaleFilter: (h) => `scale=-2:${h}`,
-        outputOptions: ['-preset', 'veryfast', '-threads', '2'],
+        outputOptions: ['-preset', preset, '-threads', threads],
       };
+    }
   }
 }
 
@@ -91,10 +104,11 @@ async function transcodeQualityWithCodec(
   quality: QualityPreset,
   codec: string,
   segmentTime: number,
+  device: DeviceInfo,
   onProgress?: (percent: number) => void,
 ): Promise<number> {
   const playlistPath = path.join(outputDir, 'playlist.m3u8');
-  const profile = buildCodecProfile(codec);
+  const profile = buildCodecProfile(codec, device);
   let durationSeconds = 0;
 
   const options = [
@@ -143,12 +157,13 @@ async function transcodeQuality(
   quality: QualityPreset,
   codec: string,
   segmentTime: number,
+  device: DeviceInfo,
   onProgress?: (percent: number) => void,
   logContext?: TranscodeLogContext,
 ): Promise<number> {
   try {
     return await transcodeQualityWithCodec(
-      inputPath, outputDir, quality, codec, segmentTime, onProgress,
+      inputPath, outputDir, quality, codec, segmentTime, device, onProgress,
     );
   } catch (err: any) {
     if (err.isHardwareFail) {
@@ -161,7 +176,7 @@ async function transcodeQuality(
       });
       console.warn(`Hardware encoder ${codec} failed for ${quality.name}; falling back to libx264`);
       return transcodeQualityWithCodec(
-        inputPath, outputDir, quality, 'libx264', segmentTime, onProgress,
+        inputPath, outputDir, quality, 'libx264', segmentTime, device, onProgress,
       );
     }
     throw err;
@@ -180,6 +195,7 @@ export async function transcodeToHls(
   logContext?: TranscodeLogContext,
 ): Promise<TranscodeResult> {
   const codec = await codecDetector.detect();
+  const device = DeviceDetector.getInfo();
 
   logStructured({
     stage: 'transcode_plan',
@@ -187,6 +203,7 @@ export async function transcodeToHls(
     segmentTime,
     parallelQualityTiers: qualities.length,
     qualityNames: qualities.map((q) => q.name),
+    cpuCoresUsed: device.cores,
     ...logContext,
   });
 
@@ -221,6 +238,7 @@ export async function transcodeToHls(
         quality,
         codec,
         segmentTime,
+        device,
         (p) => {
           progressMap.set(quality.name, p);
           notifyProgress();

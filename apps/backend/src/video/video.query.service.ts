@@ -134,4 +134,66 @@ export class VideoQueryService {
       order: { sequence: 'ASC' },
     });
   }
+
+  async getRelated(
+    videoId: string,
+    limit: number = 12,
+    excludeIds: string[] = [],
+    user?: AuthUser,
+  ): Promise<{ data: Video[]; hasMore: boolean }> {
+    const baseVideo = await this.findOne(videoId, user);
+
+    const currentUserId = user?.userId ?? 'none';
+    const isAdmin = user?.roles.includes(Role.ADMIN) ?? false;
+    
+    const qb = this.videoRepo.createQueryBuilder('v');
+    
+    // Exclude the current video
+    qb.where('v.id != :videoId', { videoId });
+    // Must be ready
+    qb.andWhere("v.status = 'ready'");
+
+    // Exclude recently watched videos
+    if (excludeIds.length > 0) {
+      qb.andWhere('v.id NOT IN (:...excludeIds)', { excludeIds });
+    }
+
+    // Role-based visibility
+    if (!isAdmin) {
+      qb.andWhere(
+        new Brackets((hb) => {
+          hb.where('v.visibility = :public').orWhere('v.ownerId = :userId');
+        }),
+      );
+      qb.setParameters({
+        public: VideoVisibility.PUBLIC,
+        userId: currentUserId,
+      });
+    }
+
+    // Recommendation Scoring weights
+    // Match category gives top priority
+    if (baseVideo.category) {
+      qb.addSelect(
+        `CASE WHEN v.category = :category THEN 1 ELSE 0 END`,
+        'category_score',
+      );
+      qb.setParameter('category', baseVideo.category);
+      qb.orderBy('category_score', 'DESC');
+    }
+
+    // Add randomization to shuffle same-weight videos to prevent looping A -> B -> A
+    // RANDOM() is Postgres specific but works gracefully here
+    qb.addOrderBy('RANDOM()');
+
+    // Fetch one extra to determine hasMore
+    qb.take(limit + 1);
+
+    const result = await qb.getMany();
+    
+    return {
+      data: result.slice(0, limit),
+      hasMore: result.length > limit,
+    };
+  }
 }

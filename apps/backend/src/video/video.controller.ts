@@ -1,8 +1,4 @@
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import {
   Body,
   Controller,
@@ -106,7 +102,25 @@ export class VideoController {
     );
   }
 
-  @ApiOperation({ summary: 'Get details of a specific video' })
+  @ApiOperation({ summary: 'Get related videos for a specific video' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Number of related videos to return (default 12)' })
+  @ApiQuery({ name: 'excludeIds', required: false, description: 'Comma separated list of video IDs to exclude' })
+  @Get(':id/related')
+  getRelated(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('limit') limit?: string,
+    @Query('excludeIds') excludeIds?: string,
+    @CurrentUser() user?: AuthUser,
+  ) {
+    const limitNum = limit ? parseInt(limit, 10) : 12;
+    const excludeIdsArr = excludeIds
+      ? excludeIds.split(',').filter(Boolean)
+      : [];
+
+    return this.videoService.getRelated(id, limitNum, excludeIdsArr, user);
+  }
+
+  @ApiOperation({ summary: 'Get details of a specific video by ID' })
   @Get(':id')
   findOne(
     @Param('id', ParseUUIDPipe) id: string,

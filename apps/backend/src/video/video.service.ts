@@ -97,6 +97,15 @@ export class VideoService {
     return this.commandService.updateMetadata(id, ownerId, dto, isAdmin);
   }
 
+  async getRelated(
+    videoId: string,
+    limit: number = 12,
+    excludeIds: string[] = [],
+    user?: AuthUser,
+  ): Promise<{ data: Video[]; hasMore: boolean }> {
+    return this.queryService.getRelated(videoId, limit, excludeIds, user);
+  }
+
   async remove(id: string): Promise<void> {
     return this.commandService.remove(id);
   }
