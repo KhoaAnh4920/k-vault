@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { spawn } from 'child_process';
 import ffmpeg from 'fluent-ffmpeg';
 import { logStructured } from '../structured-log';
+import { DeviceDetector } from './device-detector';
 
 // Ordered by preference per platform
 const PLATFORM_CODEC_PRIORITY: Record<string, string[]> = {
@@ -189,6 +190,10 @@ export class CodecDetector {
 
   async detect(): Promise<string> {
     if (this.cached) return this.cached;
+
+    const device = DeviceDetector.getInfo();
+    console.log(`\n🚀 Hardware Detected: ${device.cpuModel}`);
+    console.log(`   OS: ${device.platform} | Arch: ${device.arch} | Cores: ${device.cores} | Docker: ${device.isDocker}`);
 
     if (process.env.FORCE_CODEC) {
       this.cached = process.env.FORCE_CODEC;
