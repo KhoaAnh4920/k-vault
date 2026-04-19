@@ -558,10 +558,30 @@ async function processJob(
  * the Redis-backed BullMQ lock (lockDuration: 600_000) prevents
  * duplicate job processing.
  */
+let isTranscoding = false;
+const globalTranscodeLock = async <T>(fn: () => Promise<T>): Promise<T> => {
+  while (isTranscoding) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  isTranscoding = true;
+  try {
+    return await fn();
+  } finally {
+    isTranscoding = false;
+  }
+};
 const worker = new Worker<TranscodeJobData>(
   // Use the primary queue; for multi-queue support, add a router pattern
   contexts[0]!.queueName,
-  (job) => processJob(job, contexts[0]!.pool, contexts[0]!.driveFolderId, contexts[0]!.queueName),
+  (job) =>
+    globalTranscodeLock(() =>
+      processJob(
+        job,
+        contexts[0]!.pool,
+        contexts[0]!.driveFolderId,
+        contexts[0]!.queueName,
+      ),
+    ),
   {
     connection: redisConnection,
     concurrency: 1,      // BR3: exactly 1 job at a time
@@ -574,10 +594,15 @@ let secondaryWorker: InstanceType<typeof Worker<TranscodeJobData>> | null = null
 if (contexts[1] && contexts[1].pool) {
   secondaryWorker = new Worker<TranscodeJobData>(
     contexts[1].queueName,
-    async (job) => {
-      // Wait if the primary worker is already processing (global mutex via Redis lock)
-      return processJob(job, contexts[1]!.pool, contexts[1]!.driveFolderId, contexts[1]!.queueName);
-    },
+    (job) =>
+      globalTranscodeLock(() =>
+        processJob(
+          job,
+          contexts[1]!.pool,
+          contexts[1]!.driveFolderId,
+          contexts[1]!.queueName,
+        ),
+      ),
     {
       connection: redisConnection,
       concurrency: 1,
