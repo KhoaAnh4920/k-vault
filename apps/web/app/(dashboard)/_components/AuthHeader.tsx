@@ -59,7 +59,7 @@ export default function AuthHeader() {
   const [searchOpen, setSearchOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 bg-background/85 backdrop-blur border-b border-border/40">
+    <header className="sticky top-0 z-50 w-full bg-background/80 backdrop-blur-md border-b border-border/40">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl flex items-center justify-between h-16 gap-4">
         
         {/* Left Side: Mobile Menu & Logo */}

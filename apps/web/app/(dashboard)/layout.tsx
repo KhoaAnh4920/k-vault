@@ -7,11 +7,11 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="relative min-h-screen flex flex-col w-full overflow-x-hidden">
+    <div className="relative min-h-screen flex flex-col w-full overflow-x-clip">
       <AuthHeader />
       <div className="flex flex-1 min-w-0 w-full">
         {/* Sidebar - hidden on mobile, fixed width on desktop */}
-        <aside className="hidden md:flex w-64 flex-col fixed left-0 top-16 bottom-0 border-r border-border/40 z-40 bg-background/95">
+        <aside className="hidden md:flex w-64 flex-col fixed left-0 top-16 bottom-0 border-r border-border/40 z-40">
           <SidebarNav />
         </aside>
         

@@ -34,7 +34,7 @@ export default function SidebarNav({ className, onClick }: { className?: string,
   ];
 
   return (
-    <nav className={cn("flex flex-col gap-2 p-4 w-full h-full bg-background/50", className)}>
+    <nav className={cn("flex flex-col gap-2 p-4 w-full h-full", className)}>
       {links.filter((l) => l.show).map((link) => {
         const Icon = link.icon;
         const isActive = pathname === link.href;
