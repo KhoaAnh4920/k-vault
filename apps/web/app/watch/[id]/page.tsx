@@ -26,6 +26,10 @@ import {
   ArrowLeft,
   Share2,
   Settings,
+  Copy,
+  Link2,
+  Link2Off,
+  Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -388,6 +392,41 @@ export default function WatchPage() {
 
   const playerRef = useRef<MediaPlayerInstance>(null);
 
+  // Derived from state — must be after useState declarations
+  const currentUserId = session?.user?.id ?? null;
+  const isOwner = !!video && !!currentUserId && video.ownerId === currentUserId;
+
+  // Share token state (US3)
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [generatingShare, setGeneratingShare] = useState(false);
+
+  const handleGenerateShareLink = async () => {
+    if (!video) return;
+    setGeneratingShare(true);
+    try {
+      const { shareToken: token } = await videoApi.generateShareLink(video.id);
+      setShareToken(token);
+      const url = `${window.location.origin}/watch/share/${token}`;
+      await navigator.clipboard.writeText(url);
+      toast.success("Share link copied to clipboard!");
+    } catch {
+      toast.error("Failed to generate share link.");
+    } finally {
+      setGeneratingShare(false);
+    }
+  };
+
+  const handleRevokeShareLink = async () => {
+    if (!video) return;
+    try {
+      await videoApi.revokeShareLink(video.id);
+      setShareToken(null);
+      toast.success("Share link revoked.");
+    } catch {
+      toast.error("Failed to revoke share link.");
+    }
+  };
+
   const handleShare = async () => {
     try {
       if (navigator.share) {
@@ -410,6 +449,8 @@ export default function WatchPage() {
       .get(id)
       .then((v) => {
         setVideo(v);
+        // Sync share token from fetched video (can't do this at useState init time)
+        if (v.shareToken) setShareToken(v.shareToken);
 
         // Update watch history immediately so current video is marked as watched
         let recentHistoryIds = new Set<string>();
@@ -728,25 +769,30 @@ export default function WatchPage() {
             </div>
           ) : (
             <div className="aspect-video bg-card border border-border rounded-xl flex flex-col items-center justify-center mb-8 gap-4 px-4 text-center">
-              {video.status === "processing" ? (
+              {video.status === "waiting" ? (
+                <>
+                  <Clock className="w-10 h-10 text-amber-400" />
+                  <div>
+                    <p className="m-0 font-semibold text-foreground">Queued for processing</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      This video is waiting in the transcode queue. It will start processing soon.
+                    </p>
+                  </div>
+                </>
+              ) : video.status === "processing" ? (
                 <>
                   <Loader2 className="w-10 h-10 animate-spin text-primary" />
                   <div>
-                    <p className="m-0 font-semibold text-foreground">
-                      Transcoding in progress...
-                    </p>
+                    <p className="m-0 font-semibold text-foreground">Transcoding in progress...</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      This may take a few minutes. Start the local worker on
-                      your Mac.
+                      This may take a few minutes.
                     </p>
                   </div>
                 </>
               ) : (
                 <>
                   <AlertTriangle className="w-12 h-12 text-destructive mb-2" />
-                  <p className="m-0 text-muted-foreground">
-                    Transcoding failed
-                  </p>
+                  <p className="m-0 text-muted-foreground">Transcoding failed</p>
                 </>
               )}
             </div>
@@ -760,17 +806,51 @@ export default function WatchPage() {
           </h1>
 
           <div className="flex items-center justify-between mt-3 flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              {/* Could add author avatar here in future */}
-            </div>
+            <div className="flex items-center gap-3" />
 
             <div className="flex items-center gap-2">
-              <Button
-                onClick={handleShare}
-                variant="secondary"
-                className="rounded-full shadow-sm text-sm font-semibold h-9"
-                size="sm"
-              >
+              {/* Owner share-link panel (US3) */}
+              {isOwner && (video.visibility === "private" || video.visibility === "unlisted") && (
+                <>
+                  {shareToken ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="rounded-full text-xs h-9 gap-1.5"
+                        onClick={async () => {
+                          const url = `${window.location.origin}/watch/share/${shareToken}`;
+                          await navigator.clipboard.writeText(url);
+                          toast.success("Link copied!");
+                        }}
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Copy Link
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="rounded-full text-xs h-9 gap-1.5 text-destructive hover:text-destructive"
+                        onClick={handleRevokeShareLink}
+                      >
+                        <Link2Off className="w-3.5 h-3.5" /> Revoke
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="rounded-full text-xs h-9 gap-1.5"
+                      onClick={handleGenerateShareLink}
+                      disabled={generatingShare}
+                    >
+                      {generatingShare ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+                      Get Share Link
+                    </Button>
+                  )}
+                </>
+              )}
+
+              <Button onClick={handleShare} variant="secondary" className="rounded-full shadow-sm text-sm font-semibold h-9" size="sm">
                 <Share2 className="w-4 h-4 mr-2" /> Share
               </Button>
             </div>

@@ -46,7 +46,7 @@ interface UploadItem {
   realtimeStatus?: string;
   realtimeProgress?: number;
   realtimeDetail?: string;
-  visibility: "public" | "private";
+  visibility: "public" | "private" | "unlisted" | "role_restricted";
 }
 
 const CATEGORIES = [
@@ -65,6 +65,11 @@ const MAX_CONCURRENT_UPLOADS = 2; // Protects network limits
 export default function UploadPage() {
   const { data: session } = useSession();
   const router = useRouter();
+  const isAdmin = (session?.user?.roles ?? []).includes("admin");
+  const isMember = (session?.user?.roles ?? []).includes("member");
+  // Members can only use Private or Unlisted; default to Private
+  const defaultVisibility = isMember ? "private" : "public";
+
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [globalStage, setGlobalStage] = useState<"idle" | "uploading" | "done">(
     "idle",
@@ -99,7 +104,7 @@ export default function UploadPage() {
         expanded: false,
         thumbnails: [],
         selectedThumbnail: null,
-        visibility: "public",
+        visibility: defaultVisibility,
       });
 
       // Extract thumbnails in background
@@ -270,6 +275,15 @@ export default function UploadPage() {
   };
 
   const getStageDisplay = (item: UploadItem) => {
+    // Real-time status from worker (SSE)
+    if (item.realtimeStatus === "waiting") {
+      return (
+        <span className="text-amber-400 font-bold text-xs flex items-center gap-1.5 uppercase tracking-wider bg-amber-400/10 px-2.5 py-1 rounded-full border border-amber-400/20">
+          <Clock className="w-3.5 h-3.5" /> Queued
+        </span>
+      );
+    }
+
     if (item.realtimeStatus === "processing") {
       return (
         <div className="flex flex-col gap-1.5 w-full max-w-[200px]">
@@ -623,27 +637,37 @@ export default function UploadPage() {
                             <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
                               Visibility
                             </label>
-                            <div className="flex gap-3">
-                              {(["public", "private"] as const).map((v) => (
-                                <button
-                                  key={v}
-                                  onClick={() =>
-                                    updateItem(item.id, { visibility: v })
-                                  }
-                                  className={cn(
-                                    "flex-1 py-2.5 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all",
-                                    item.visibility === v
-                                      ? "bg-primary text-black border-primary shadow-lg shadow-primary/20"
-                                      : "bg-background border-border hover:border-primary/40 text-muted-foreground",
-                                  )}
-                                >
-                                  {v}
-                                </button>
-                              ))}
-                            </div>
+                            {isMember ? (
+                              // Members can only choose Private (forced server-side)
+                              <div className="p-3 rounded-lg bg-muted/40 border border-border/60 text-xs text-muted-foreground flex items-center gap-2">
+                                <span className="text-foreground font-semibold">🔒 Private</span>
+                                <span>— Your uploads are always private. Use the share button after upload to get a shareable link.</span>
+                              </div>
+                            ) : (
+                              <div className="flex gap-3">
+                                {(["public", "private", "role_restricted"] as const).map((v) => (
+                                  <button
+                                    key={v}
+                                    onClick={() =>
+                                      updateItem(item.id, { visibility: v })
+                                    }
+                                    className={cn(
+                                      "flex-1 py-2.5 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all",
+                                      item.visibility === v
+                                        ? "bg-primary text-black border-primary shadow-lg shadow-primary/20"
+                                        : "bg-background border-border hover:border-primary/40 text-muted-foreground",
+                                    )}
+                                  >
+                                    {v === "role_restricted" ? "Admin Only" : v}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                             <p className="text-[10px] text-muted-foreground/60 ml-1">
                               {item.visibility === "public"
                                 ? "Anyone can find and watch your video."
+                                : item.visibility === "role_restricted"
+                                ? "Only Admins can see this video."
                                 : "Only you can see and play this video."}
                             </p>
                           </div>

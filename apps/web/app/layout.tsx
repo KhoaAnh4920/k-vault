@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import Providers from "./Providers";
-import AuthHeader from "./AuthHeader";
 import SessionGuard from "./SessionGuard";
 import "./globals.css";
 import { Geist, Inter } from "next/font/google";
@@ -40,8 +39,7 @@ export default function RootLayout({
       <body>
         <Providers>
           <SessionGuard />
-          <AuthHeader />
-          <main>{children}</main>
+          {children}
         </Providers>
       </body>
     </html>

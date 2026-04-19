@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/**"
+      - "apps/web/**"
       - "apps/backend/**"
       - "apps/worker/**"
       - "package.json"
@@ -28,15 +29,17 @@ jobs:
         run: |
           pnpm install
 
-      - name: Build Backend & Worker
-        run: |
-          pnpm --filter kvault-backend build
-          pnpm --filter kvault-worker build
-
       - name: Inject Environment Variables
         run: |
           cp ~/kvault-secrets/.env.backend apps/backend/.env
           cp ~/kvault-secrets/.env.worker apps/worker/.env
+          cp ~/kvault-secrets/.env.web apps/web/.env.production
+
+      - name: Build All Apps (Frontend, Backend, Worker)
+        run: |
+          pnpm --filter kvault-backend build
+          pnpm --filter kvault-worker build
+          pnpm --filter web build
 
       - name: Start or Reload PM2 Processes
         env:

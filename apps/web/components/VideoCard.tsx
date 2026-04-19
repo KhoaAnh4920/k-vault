@@ -48,13 +48,13 @@ function StatusBadge({ status }: { status: Video["status"] }) {
       variant: "outline",
       dot: "⏳",
       label: "Processing",
-      cls: "border-amber-500/50 bg-amber-500/10 text-amber-500",
+      cls: "border-none bg-amber-500/20 text-amber-400",
     },
     ready: {
       variant: "outline",
       dot: "●",
       label: "Ready",
-      cls: "border-green-500/50 bg-green-500/10 text-green-500",
+      cls: "border-none bg-green-500/20 text-green-400",
     },
     error: {
       variant: "destructive",
@@ -94,7 +94,7 @@ function PrivacyBadge({ visibility }: { visibility: Video["visibility"] }) {
   return (
     <Badge
       variant="outline"
-      className="gap-1.5 uppercase font-semibold text-[10px] tracking-wider border-blue-500/50 bg-blue-500/10 text-blue-400"
+      className="gap-1.5 uppercase font-semibold text-[10px] tracking-wider border-none bg-primary/20 text-primary"
     >
       <Lock className="w-3 h-3" /> Private
     </Badge>
@@ -223,7 +223,7 @@ export function VideoCard({
   };
 
   return (
-    <Card className="overflow-hidden h-full flex flex-col group hover:-translate-y-1.5 hover:shadow-xl hover:shadow-primary/5 hover:border-border/80 transition-all duration-300 bg-card border-border/40 relative">
+    <Card className="w-full overflow-hidden h-full flex flex-col group hover:-translate-y-1.5 hover:shadow-xl hover:shadow-primary/5 hover:border-border/80 transition-all duration-300 bg-card border-border/40 relative">
       <Link
         href={video.status === "ready" ? `/watch/${video.id}` : "#"}
         className="flex flex-col flex-1"
@@ -276,8 +276,8 @@ export function VideoCard({
           </h3>
 
           <div className="flex flex-col mt-auto gap-2">
-            <div className="flex items-center text-[13px] text-muted-foreground font-medium">
-              <Eye className="w-3.5 h-3.5 mr-1.5" />
+            <div className="flex items-center text-xs text-muted-foreground/80 font-medium">
+              <Eye className="w-3 h-3 mr-1.5" />
               <span>
                 {video.views > 0
                   ? new Intl.NumberFormat("en-US", {

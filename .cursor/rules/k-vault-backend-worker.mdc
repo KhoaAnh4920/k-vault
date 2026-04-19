@@ -1,0 +1,40 @@
+---
+description: K-Vault — NestJS backend, worker BullMQ, Drive, TypeORM, queue
+globs: apps/backend/**/*.ts,apps/worker/**/*.ts
+alwaysApply: false
+---
+
+# Backend & Worker — Quy ước Senior
+
+## NestJS (apps/backend)
+
+- **Validation**: Mọi body/query dùng DTO + `class-validator`; `ValidationPipe` global (`whitelist`, `forbidNonWhitelisted`, `transform`).
+- **DI**: Chỉ constructor injection; không `new` service/adapter trong class.
+- **Phân tầng**: Controller = route + gọi service; nghiệp vụ trong service; TypeORM phức tạp → tách repository/helper thay vì nhồi vào controller.
+- **Entity**: Property camelCase, cột DB `name: 'snake_case'`.
+- **TypeORM**: `synchronize: true` (theo app module) — đổi schema cần restart backend; production có thể dùng migrations trong `src/database/migrations/`.
+- **Lỗi**: Ưu tiên exception Nest/`HttpException`; filter tập trung; tránh try/catch lặp vô nghĩa.
+
+## Google Drive (quan trọng)
+
+- **Resumable upload**: Không dùng SDK cho bước cần header `Location` — dùng raw HTTP (axios) tới endpoint upload resumable của Drive; tham chiếu `google-drive.adapter.ts`.
+- **ID trước khi upload**: `drive.files.generateIds()` để có id sẵn khi cần.
+- **Cấu trúc HLS**: Mỗi video một subfolder `{videoId}`; `hls_folder_drive_id` trên bảng `videos`.
+
+## Worker (apps/worker)
+
+- **Runtime**: TypeScript chạy trực tiếp (`ts-node` / nodemon), không Nest DI.
+- **DB**: Chỉ `pg` Pool + SQL trong `db.ts` — không trộn TypeORM vào worker.
+- **Redis / Upstash**: URL dạng password-only; có `parseRedisUrl()` tùy chỉnh trong `main.ts` — **không** thay bằng `new URL()` nếu làm hỏng password có ký tự đặc biệt.
+- **FFmpeg**: Encoder mặc định có thể là hardware (`h264_videotoolbox` trên Apple Silicon); trên máy khác chuyển strategy (ví dụ `libx264`) — pattern Strategy/adapter trong `transcode/`.
+
+## Queue & job
+
+- Đăng ký tên queue đồng bộ với hằng số backend (`queue.constants`).
+- Payload job: rõ ràng, version nếu cần; factory/helper cho object phức tạp.
+
+## Chất lượng code
+
+- SOLID: adapter cho SDK (Drive, S3), interface storage để đổi provider.
+- Hàm ngắn (~≤30 dòng lý tưởng); early return; tránh lồng if > 3 tầng.
+- Đặt tên: hàm bắt đầu bằng động từ (`getPlaylist`, `initiateUpload`).

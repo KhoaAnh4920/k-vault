@@ -2,20 +2,29 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 
 export enum VideoStatus {
+  /** Job is queued but another job is currently being processed (BR3). */
+  WAITING = 'waiting',
   PROCESSING = 'processing',
   READY = 'ready',
   ERROR = 'error',
 }
 
 export enum VideoVisibility {
+  /** Visible to all users including unauthenticated guests. */
   PUBLIC = 'public',
+  /** Visible only to the owner. Admin cannot view (BR2). */
   PRIVATE = 'private',
+  /** Visible to anyone who has the secret shareToken link (US3). */
+  UNLISTED = 'unlisted',
+  /** Visible only to Admin role — for system/admin-only content (US1). */
+  ROLE_RESTRICTED = 'role_restricted',
 }
 
 @Entity('videos')
@@ -29,7 +38,7 @@ export class Video {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
-  @Column({ type: 'enum', enum: VideoStatus, default: VideoStatus.PROCESSING })
+  @Column({ type: 'enum', enum: VideoStatus, default: VideoStatus.WAITING })
   status: VideoStatus;
 
   @Column({ type: 'varchar', nullable: true, name: 'raw_drive_file_id' })
@@ -57,7 +66,6 @@ export class Video {
   @Column({ type: 'varchar', nullable: true, name: 'owner_id' })
   ownerId: string | null;
 
-  /** Public videos are visible to all; Private videos only to owner/admin. */
   @Column({
     type: 'enum',
     enum: VideoVisibility,
@@ -65,6 +73,15 @@ export class Video {
     name: 'visibility',
   })
   visibility: VideoVisibility;
+
+  /**
+   * Cryptographic token for Unlisted share links (US3).
+   * Only populated when visibility = UNLISTED.
+   * Format: 64-char hex string from crypto.randomBytes(32).
+   */
+  @Index({ unique: true, sparse: true })
+  @Column({ type: 'varchar', length: 64, nullable: true, name: 'share_token' })
+  shareToken: string | null;
 
   @OneToMany('VideoChunk', 'video', { cascade: false })
   chunks: unknown[];

@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { Readable } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -20,12 +21,19 @@ import {
   UpdateVideoMetadataDto,
 } from './dto/video.dto';
 import { TRANSCODE_QUEUE } from '../queue/queue.constants';
+import { Role } from '../auth/roles.decorator';
 
 export interface TranscodeJobData {
   videoId: string;
   rawDriveFileId: string;
   thumbnailDriveFileId?: string | null;
 }
+
+/** Visibility states a Member is permitted to set on their own videos. */
+const MEMBER_ALLOWED_VISIBILITIES: VideoVisibility[] = [
+  VideoVisibility.PRIVATE,
+  VideoVisibility.UNLISTED,
+];
 
 @Injectable()
 export class VideoCommandService {
@@ -66,7 +74,6 @@ export class VideoCommandService {
     const stream = new Readable();
     stream.push(buffer);
     stream.push(null);
-
     return this.storage.uploadFromStream(stream, {
       name: `thumb_${Date.now()}.jpg`,
       mimeType: 'image/jpeg',
@@ -74,9 +81,27 @@ export class VideoCommandService {
     });
   }
 
-  async create(dto: CreateVideoDto, ownerId: string): Promise<Video> {
-    let thumbnailDriveFileId: string | null = null;
+  /**
+   * Create a video record and enqueue it for transcoding.
+   *
+   * Business rules enforced here:
+   * - US2: If uploader is a Member (not Admin), visibility is FORCED to PRIVATE.
+   * - BR3: Initial status is WAITING (not PROCESSING) — the worker sets it to
+   *   PROCESSING when it actually begins. This enables the "Queued" UI state.
+   */
+  async create(
+    dto: CreateVideoDto,
+    ownerId: string,
+    roles: string[],
+  ): Promise<Video> {
+    const isAdmin = roles.includes(Role.ADMIN);
 
+    // US2: Member uploads are always PRIVATE regardless of DTO input
+    const visibility = isAdmin
+      ? (dto.visibility ?? VideoVisibility.PUBLIC)
+      : VideoVisibility.PRIVATE;
+
+    let thumbnailDriveFileId: string | null = null;
     if (dto.thumbnailBase64) {
       try {
         thumbnailDriveFileId = await this.uploadThumbnailFromBase64(
@@ -87,7 +112,7 @@ export class VideoCommandService {
         );
       } catch (err) {
         this.logger.error(
-          `Failed to upload provided thumbnail: ${(err as Error).message}`,
+          `Failed to upload thumbnail: ${(err as Error).message}`,
         );
       }
     }
@@ -97,10 +122,11 @@ export class VideoCommandService {
       description: dto.description ?? null,
       rawDriveFileId: dto.rawDriveFileId,
       category: dto.category ?? null,
-      status: VideoStatus.PROCESSING,
+      status: VideoStatus.WAITING, // BR3: starts as WAITING until worker picks it up
       ownerId,
-      visibility: dto.visibility ?? VideoVisibility.PUBLIC,
+      visibility,
       thumbnailDriveFileId,
+      shareToken: null,
     });
 
     const saved = await this.videoRepo.save(video);
@@ -119,7 +145,9 @@ export class VideoCommandService {
       },
     );
 
-    this.logger.log(`Video ${saved.id} created and queued for transcoding`);
+    this.logger.log(
+      `Video ${saved.id} created (status=waiting) and queued for transcoding`,
+    );
     return saved;
   }
 
@@ -139,19 +167,49 @@ export class VideoCommandService {
     await this.videoRepo.update(id, { status, ...extra });
   }
 
+  /**
+   * Update video metadata.
+   *
+   * Visibility restrictions:
+   * - Admin: any visibility value
+   * - Member: only PRIVATE or UNLISTED (cannot set PUBLIC or ROLE_RESTRICTED)
+   */
   async updateMetadata(
     id: string,
-    ownerId: string,
+    requesterId: string,
     dto: UpdateVideoMetadataDto,
-    isAdmin = false,
+    roles: string[],
   ): Promise<Video> {
+    const isAdmin = roles.includes(Role.ADMIN);
     const video = await this.videoRepo.findOne({ where: { id } });
     if (!video) throw new NotFoundException(`Video ${id} not found`);
 
-    if (!isAdmin && video.ownerId !== ownerId) {
+    // Ownership check: only owner OR admin (who is owner) can edit
+    // Note: per BR2, Admin cannot access PRIVATE videos owned by others.
+    // For non-private, Admins cannot edit other users' metadata here either —
+    // only the owner can edit their own video metadata.
+    if (video.ownerId !== requesterId) {
       throw new ForbiddenException(
         'You do not have permission to edit this video',
       );
+    }
+
+    // Visibility enforcement for Members
+    if (dto.visibility !== undefined && !isAdmin) {
+      if (!MEMBER_ALLOWED_VISIBILITIES.includes(dto.visibility)) {
+        throw new ForbiddenException(
+          'Members may only set visibility to Private or Unlisted',
+        );
+      }
+    }
+
+    // If changing away from UNLISTED, clear the share token
+    if (
+      dto.visibility !== undefined &&
+      dto.visibility !== VideoVisibility.UNLISTED &&
+      video.shareToken !== null
+    ) {
+      video.shareToken = null;
     }
 
     // Process new thumbnail
@@ -161,8 +219,6 @@ export class VideoCommandService {
           dto.thumbnailBase64,
           video.hlsFolderDriveId || undefined,
         );
-
-        // Delete old thumbnail if exists
         if (video.thumbnailDriveFileId) {
           try {
             await this.storage.deleteFile(video.thumbnailDriveFileId);
@@ -172,9 +228,7 @@ export class VideoCommandService {
             );
           }
         }
-
         video.thumbnailDriveFileId = newFileId;
-        this.logger.log(`Thumbnail updated for video ${id}`);
       } catch (err) {
         this.logger.error(
           `Failed to update thumbnail: ${(err as Error).message}`,
@@ -182,13 +236,65 @@ export class VideoCommandService {
       }
     }
 
-    // Update other fields
     if (dto.title !== undefined) video.title = dto.title;
     if (dto.description !== undefined) video.description = dto.description;
     if (dto.category !== undefined) video.category = dto.category;
     if (dto.visibility !== undefined) video.visibility = dto.visibility;
 
     return this.videoRepo.save(video);
+  }
+
+  /**
+   * Generate a secret share token for an UNLISTED video (US3).
+   * Sets visibility to UNLISTED and generates a cryptographic token.
+   * Only the video owner can call this.
+   */
+  async generateShareToken(
+    videoId: string,
+    requesterId: string,
+  ): Promise<{ shareToken: string }> {
+    const video = await this.videoRepo.findOne({ where: { id: videoId } });
+    if (!video) throw new NotFoundException(`Video ${videoId} not found`);
+    if (video.ownerId !== requesterId) {
+      throw new ForbiddenException(
+        'Only the video owner can generate a share link',
+      );
+    }
+
+    const shareToken = randomBytes(32).toString('hex');
+    await this.videoRepo.update(videoId, {
+      shareToken,
+      visibility: VideoVisibility.UNLISTED,
+    });
+
+    this.logger.log(
+      `Share token generated for video ${videoId} by ${requesterId}`,
+    );
+    return { shareToken };
+  }
+
+  /**
+   * Revoke the share token for a video (US3).
+   * Resets visibility back to PRIVATE and clears the token.
+   * Only the video owner can call this.
+   */
+  async revokeShareToken(videoId: string, requesterId: string): Promise<void> {
+    const video = await this.videoRepo.findOne({ where: { id: videoId } });
+    if (!video) throw new NotFoundException(`Video ${videoId} not found`);
+    if (video.ownerId !== requesterId) {
+      throw new ForbiddenException(
+        'Only the video owner can revoke a share link',
+      );
+    }
+
+    await this.videoRepo.update(videoId, {
+      shareToken: null,
+      visibility: VideoVisibility.PRIVATE,
+    });
+
+    this.logger.log(
+      `Share token revoked for video ${videoId} by ${requesterId}`,
+    );
   }
 
   async incrementViews(id: string): Promise<void> {
@@ -205,77 +311,92 @@ export class VideoCommandService {
     await this.chunkRepo.save(entities);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(
+    id: string,
+    requesterId: string,
+    roles: string[],
+  ): Promise<void> {
+    const isAdmin = roles.includes(Role.ADMIN);
     const video = await this.videoRepo.findOne({
       where: { id },
       relations: ['chunks'],
     });
     if (!video) throw new NotFoundException(`Video ${id} not found`);
 
-    // 1. Delete all HLS segments + folder contents from S3 (prefix delete)
-    const folderId = video.hlsFolderDriveId;
-    if (folderId !== null) {
-      try {
-        // Ensure the folder path ends with '/' so S3 adapter triggers deleteFolder()
-        const folderPrefix = folderId.endsWith('/') ? folderId : `${folderId}/`;
-        await this.storage.deleteFile(folderPrefix);
-        this.logger.log(
-          `Deleted storage folder: ${folderPrefix} for video ${id}`,
+    // Ownership / permission check
+    // Admin can delete PUBLIC, ROLE_RESTRICTED, UNLISTED (not other users' PRIVATE — BR2)
+    // Member can only delete their own videos
+    const isOwner = video.ownerId === requesterId;
+    if (!isOwner) {
+      if (!isAdmin) {
+        throw new ForbiddenException(
+          'You do not have permission to delete this video',
         );
-      } catch (err) {
-        this.logger.warn(
-          `Failed to delete storage folder ${folderId}: ${(err as Error).message}`,
+      }
+      // Admin trying to delete someone else's PRIVATE video — BR2 prohibition
+      if (video.visibility === VideoVisibility.PRIVATE) {
+        throw new ForbiddenException(
+          "Admins cannot delete another user's private video",
         );
       }
     }
 
-    // 2. Delete thumbnail separately only if it's stored outside the HLS folder
-    //    (e.g. pre-selected thumbnails uploaded to the 'public/' prefix)
+    // Delete storage files
+    if (video.hlsFolderDriveId !== null) {
+      try {
+        const folderPrefix = video.hlsFolderDriveId.endsWith('/')
+          ? video.hlsFolderDriveId
+          : `${video.hlsFolderDriveId}/`;
+        await this.storage.deleteFile(folderPrefix);
+      } catch (err) {
+        this.logger.warn(
+          `Failed to delete storage folder: ${(err as Error).message}`,
+        );
+      }
+    }
+
     if (video.thumbnailDriveFileId) {
-      const thumbKey = video.thumbnailDriveFileId;
-      const isInsideFolder = folderId !== null && thumbKey.startsWith(folderId);
+      const isInsideFolder =
+        video.hlsFolderDriveId !== null &&
+        video.thumbnailDriveFileId.startsWith(video.hlsFolderDriveId);
       if (!isInsideFolder) {
         try {
-          await this.storage.deleteFile(thumbKey);
-          this.logger.log(`Deleted thumbnail: ${thumbKey}`);
+          await this.storage.deleteFile(video.thumbnailDriveFileId);
         } catch (err) {
           this.logger.warn(
-            `Failed to delete thumbnail ${thumbKey}: ${(err as Error).message}`,
+            `Failed to delete thumbnail: ${(err as Error).message}`,
           );
         }
       }
     }
 
-    // 3. Delete raw source file from storage (if it still exists — normally removed by worker)
     if (video.rawDriveFileId) {
       try {
         await this.storage.deleteFile(video.rawDriveFileId);
-        this.logger.log(`Deleted raw file: ${video.rawDriveFileId}`);
       } catch (err) {
         this.logger.warn(
-          `Failed to delete raw file ${video.rawDriveFileId}: ${(err as Error).message}`,
+          `Failed to delete raw file: ${(err as Error).message}`,
         );
       }
     }
 
-    // 4. If still processing, remove the BullMQ job to stop the worker
-    if (video.status === VideoStatus.PROCESSING) {
+    if (
+      video.status === VideoStatus.PROCESSING ||
+      video.status === VideoStatus.WAITING
+    ) {
       try {
         const job = await this.transcodeQueue.getJob(id);
         if (job) {
           await job.remove();
-          this.logger.log(`Removed active transcode job for video ${id}`);
+          this.logger.log(`Removed transcode job for video ${id}`);
         }
       } catch (err) {
-        this.logger.warn(
-          `Failed to remove job for video ${id}: ${(err as Error).message}`,
-        );
+        this.logger.warn(`Failed to remove job: ${(err as Error).message}`);
       }
     }
 
-    // 5. Delete DB records (chunks cascade via FK, then video)
     await this.chunkRepo.delete({ videoId: id });
     await this.videoRepo.delete(id);
-    this.logger.log(`Video ${id} fully deleted`);
+    this.logger.log(`Video ${id} fully deleted by ${requesterId}`);
   }
 }

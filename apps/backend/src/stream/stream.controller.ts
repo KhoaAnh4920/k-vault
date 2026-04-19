@@ -1,6 +1,7 @@
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import {
@@ -11,36 +12,41 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Query,
   Res,
   StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { StreamService } from './stream.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { CurrentUser, type AuthUser } from '../auth/jwt.strategy';
 
 @ApiTags('Stream')
 @ApiBearerAuth()
 @Controller('stream')
-@UseGuards(JwtAuthGuard)
+@UseGuards(OptionalJwtAuthGuard)
 export class StreamController {
   constructor(private readonly streamService: StreamService) {}
 
   /**
    * GET /stream/:videoId/playlist
-   * Returns the master HLS playlist for a video.
+   * Returns the master HLS playlist.
+   * shareToken required for UNLISTED videos accessed by non-owners.
    */
   @ApiOperation({ summary: 'Get Master HLS Playlist for video playback' })
+  @ApiQuery({ name: 'shareToken', required: false })
   @Get(':videoId/playlist')
   async getPlaylist(
     @Param('videoId', ParseUUIDPipe) videoId: string,
     @Res({ passthrough: true }) res: Response,
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | null,
+    @Query('shareToken') shareToken?: string,
   ): Promise<StreamableFile> {
     const playlist = await this.streamService.getRewrittenPlaylist(
       videoId,
       user,
+      shareToken,
     );
     res.set({
       'Content-Type': 'application/vnd.apple.mpegurl',
@@ -51,21 +57,23 @@ export class StreamController {
 
   /**
    * GET /stream/:videoId/:quality/playlist
-   * Returns the variant playlist for a specific quality (e.g. 1080p, 480p, 320p).
-   * Called by hls.js after parsing the master playlist.
+   * Returns the variant playlist for a specific quality.
    */
   @ApiOperation({ summary: 'Get quality-specific variant playlist' })
+  @ApiQuery({ name: 'shareToken', required: false })
   @Get(':videoId/:quality/playlist')
   async getQualityPlaylist(
     @Param('videoId', ParseUUIDPipe) videoId: string,
     @Param('quality') quality: string,
     @Res({ passthrough: true }) res: Response,
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | null,
+    @Query('shareToken') shareToken?: string,
   ): Promise<StreamableFile> {
     const playlist = await this.streamService.getQualityPlaylist(
       videoId,
       quality,
       user,
+      shareToken,
     );
     res.set({
       'Content-Type': 'application/vnd.apple.mpegurl',
@@ -76,18 +84,24 @@ export class StreamController {
 
   /**
    * GET /stream/:videoId/thumbnail
-   * Proxies the video thumbnail image from Google Drive.
+   * Proxies the video thumbnail image.
    */
   @ApiOperation({ summary: 'Stream video thumbnail image' })
+  @ApiQuery({ name: 'shareToken', required: false })
   @Get(':videoId/thumbnail')
   @HttpCode(HttpStatus.OK)
   async getThumbnail(
     @Param('videoId', ParseUUIDPipe) videoId: string,
     @Res({ passthrough: true }) res: Response,
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | null,
+    @Query('shareToken') shareToken?: string,
   ): Promise<StreamableFile | void> {
     try {
-      const stream = await this.streamService.getThumbnailStream(videoId, user);
+      const stream = await this.streamService.getThumbnailStream(
+        videoId,
+        user,
+        shareToken,
+      );
       res.set({
         'Content-Type': 'image/jpeg',
         'Cache-Control': 'public, max-age=86400',
@@ -104,27 +118,30 @@ export class StreamController {
 
   /**
    * GET /stream/:videoId/qualities
-   * Returns the list of available quality levels for a video (e.g. ['1080p','480p','320p']).
+   * Returns the list of available quality levels.
    */
   @ApiOperation({ summary: 'Get available video quality tiers' })
+  @ApiQuery({ name: 'shareToken', required: false })
   @Get(':videoId/qualities')
   getQualities(
     @Param('videoId', ParseUUIDPipe) videoId: string,
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | null,
+    @Query('shareToken') shareToken?: string,
   ): Promise<string[]> {
-    return this.streamService.getQualities(videoId, user);
+    return this.streamService.getQualities(videoId, user, shareToken);
   }
 
   /**
    * GET /stream/chunk/:fileId
-   * Pipes a .ts chunk stream from Google Drive — zero RAM buffering.
+   * Pipes a .ts chunk from storage.
+   * No shareToken needed — chunk fileIds are unguessable; gate is at playlist level.
    */
   @ApiOperation({ summary: 'Stream a raw .ts video chunk' })
   @Get('chunk/:fileId')
   async getChunk(
     @Param('fileId') fileId: string,
     @Res({ passthrough: true }) res: Response,
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | null,
   ): Promise<StreamableFile> {
     const stream = await this.streamService.getChunkStream(fileId, user);
     res.set({

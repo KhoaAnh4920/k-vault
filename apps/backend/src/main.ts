@@ -6,7 +6,8 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  app.setGlobalPrefix(process.env.API_PREFIX ?? 'api');
+  const apiPrefix = process.env.API_PREFIX ?? 'api';
+  app.setGlobalPrefix(apiPrefix);
 
   const config = new DocumentBuilder()
     .setTitle('K-Vault API')
@@ -14,9 +15,9 @@ async function bootstrap() {
     .setVersion('1.0')
     .addBearerAuth()
     .build();
-  
+
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  SwaggerModule.setup(`${apiPrefix}/docs`, app, document);
 
   app.enableCors({
     origin: '*',
@@ -34,7 +35,15 @@ async function bootstrap() {
 
   const port = process.env.PORT ?? 3001;
   await app.listen(port, '0.0.0.0');
-  console.log(`🚀 Backend running on http://localhost:${port}/api`);
+
+  const isProd = process.env.NODE_ENV === 'production';
+  const baseUrl = isProd
+    ? process.env.APP_URL ||
+      `http://${process.env.HOST || 'YOUR_DOMAIN_OR_IP'}:${port}`
+    : `http://localhost:${port}`;
+
+  console.log(`🚀 Backend running on ${baseUrl}/${apiPrefix}`);
+  console.log(`📚 Swagger docs available at ${baseUrl}/${apiPrefix}/docs`);
 }
 
 bootstrap();

@@ -1,0 +1,36 @@
+---
+description: K-Vault — Next.js web, API client, auth, streaming UI
+globs: apps/web/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Web (Next.js) — Quy ước Senior
+
+## Stack
+
+- **Next.js** App Router (`app/`), **Tailwind CSS v4**, component UI trong `components/ui/` (pattern shadcn-style), có thể tái sử dụng `@repo/ui` khi phù hợp.
+
+## Gọi API backend
+
+- Client dùng axios instance trong `lib/api.ts`: `baseURL` = `NEXT_PUBLIC_API_URL` (phải khớp cách backend expose prefix `api`).
+- Interceptor gắn `Authorization: Bearer` từ NextAuth session (`access_token`); 401 → `signOut` + redirect login.
+- Mọi endpoint REST backend phải khớp prefix thực tế (`/api/...` hoặc `API_PREFIX`).
+
+## Auth
+
+- NextAuth route: `app/api/auth/[...nextauth]/route.ts`; cấu hình session/token trong `lib/authOptions.ts` và type mở rộng `types/next-auth.d.ts`.
+- Bảo vệ route UI: pattern `SessionGuard` / kiểm tra session theo code hiện có — giữ nhất quán.
+
+## Video / stream
+
+- Playback HLS qua `hls.js` (trang watch); URL playlist/chunk lấy từ API backend (đã rewrite), không hardcode Drive.
+
+## UI / UX
+
+- Giữ spacing, typography, màu thống nhất với component có sẵn; ưu tiên composition hơn duplicate style.
+- Ảnh thumbnail / proxy nếu có dùng route `app/api/...` của Next khi đã có pattern — không bypass CORS/auth đã thiết kế.
+
+## Chất lượng
+
+- Server vs Client Components: chỉ `'use client'` khi cần hook browser hoặc tương tác; data fetching có thể server-side trong `page.tsx` khi phù hợp.
+- Không nhét secret vào bundle; chỉ `NEXT_PUBLIC_*` cho giá trị public.

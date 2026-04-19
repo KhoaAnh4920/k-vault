@@ -18,38 +18,65 @@ export class VideoQueryService {
   constructor(
     @InjectRepository(Video)
     private readonly videoRepo: Repository<Video>,
-
     @InjectRepository(VideoChunk)
     private readonly chunkRepo: Repository<VideoChunk>,
   ) {}
 
   async findAll(
     category?: string,
-    user?: AuthUser,
+    user?: AuthUser | null,
     page: number = 1,
     limit: number = 12,
     search?: string,
     sortBy: string = 'createdAt',
     sortOrder: 'ASC' | 'DESC' = 'DESC',
+    ownerOnly?: boolean,
   ): Promise<{ data: Video[]; hasMore: boolean; total: number }> {
-    const currentUserId = user?.userId ?? 'none';
     const isAdmin = user?.roles.includes(Role.ADMIN) ?? false;
+    const isMember = user?.roles.includes(Role.MEMBER) ?? false;
+    const currentUserId = user?.userId ?? 'none';
+
     const qb = this.videoRepo.createQueryBuilder('v');
 
     if (category) {
       qb.andWhere('v.category = :category', { category });
     }
-    if (!isAdmin) {
+
+    /**
+     * ownerOnly mode — "My Videos" tab.
+     * When true and user is authenticated, skip the visibility matrix entirely
+     * and show ONLY the caller's own uploads (all visibilities).
+     * Guests cannot use ownerOnly (no userId to filter on).
+     */
+    if (ownerOnly && user) {
+      qb.andWhere('v.ownerId = :userId', { userId: currentUserId });
+    } else if (isAdmin) {
+      // Admin sees: PUBLIC + ROLE_RESTRICTED + own uploads (any visibility)
+      // Admin does NOT see other users' PRIVATE or UNLISTED in the library
       qb.andWhere(
         new Brackets((hb) => {
-          hb.where('v.visibility = :public').orWhere('v.ownerId = :userId');
+          hb.where('v.visibility IN (:...adminVisible)', {
+            adminVisible: [
+              VideoVisibility.PUBLIC,
+              VideoVisibility.ROLE_RESTRICTED,
+            ],
+          }).orWhere('v.ownerId = :userId', { userId: currentUserId });
         }),
       );
-      qb.setParameters({
-        public: VideoVisibility.PUBLIC,
-        userId: currentUserId,
-      });
+    } else if (isMember) {
+      // Member sees: PUBLIC + own uploads (any visibility incl. PRIVATE/UNLISTED)
+      qb.andWhere(
+        new Brackets((hb) => {
+          hb.where('v.visibility = :public', {
+            public: VideoVisibility.PUBLIC,
+          }).orWhere('v.ownerId = :userId', { userId: currentUserId });
+        }),
+      );
+    } else {
+      // Guest: PUBLIC only
+      qb.andWhere('v.visibility = :public', { public: VideoVisibility.PUBLIC });
     }
+
     if (search) {
       qb.andWhere('v.title ILIKE :search', { search: `%${search}%` });
     }
@@ -76,23 +103,69 @@ export class VideoQueryService {
     ]);
 
     const [data, total] = await qb.getManyAndCount();
-
-    return {
-      data,
-      total,
-      hasMore: skip + data.length < total,
-    };
+    return { data, total, hasMore: skip + data.length < total };
   }
 
-  async findOne(id: string, user?: AuthUser): Promise<Video> {
+  /**
+   * Find a single video and enforce the full visibility access matrix.
+   *
+   * Access Matrix:
+   * - PUBLIC:          anyone
+   * - PRIVATE:         owner ONLY — Admin is explicitly FORBIDDEN (BR2)
+   * - UNLISTED:        owner + Admin OR caller provides the correct shareToken
+   * - ROLE_RESTRICTED: Admin only
+   */
+  async findOne(
+    id: string,
+    user?: AuthUser | null,
+    shareToken?: string,
+  ): Promise<Video> {
     const video = await this.videoRepo.findOne({ where: { id } });
     if (!video) throw new NotFoundException(`Video ${id} not found`);
 
     const isAdmin = user?.roles.includes(Role.ADMIN) ?? false;
-    const isOwner = video.ownerId === user?.userId;
+    const isOwner = !!user?.userId && video.ownerId === user.userId;
 
-    if (video.visibility === VideoVisibility.PRIVATE && !isAdmin && !isOwner) {
-      throw new ForbiddenException(`Access denied to video ${id}`);
+    switch (video.visibility) {
+      case VideoVisibility.PUBLIC:
+        // Anyone may access
+        break;
+
+      case VideoVisibility.PRIVATE:
+        // STRICTLY owner only — Admin cannot access (BR2 — absolute prohibition)
+        if (!isOwner) {
+          throw new ForbiddenException(`Access denied to video ${id}`);
+        }
+        break;
+
+      case VideoVisibility.UNLISTED:
+        // Owner and Admin can access directly.
+        // Everyone else needs the correct shareToken.
+        if (!isOwner && !isAdmin) {
+          if (!shareToken || shareToken !== video.shareToken) {
+            throw new ForbiddenException(`Access denied to video ${id}`);
+          }
+        }
+        break;
+
+      case VideoVisibility.ROLE_RESTRICTED:
+        // Admin only
+        if (!isAdmin) {
+          throw new ForbiddenException(`Access denied to video ${id}`);
+        }
+        break;
+    }
+
+    return video;
+  }
+
+  /** Find a video by its share token. Only works for UNLISTED videos. */
+  async findByShareToken(shareToken: string): Promise<Video> {
+    const video = await this.videoRepo.findOne({
+      where: { shareToken, visibility: VideoVisibility.UNLISTED },
+    });
+    if (!video) {
+      throw new NotFoundException('Share link is invalid or has been revoked');
     }
     return video;
   }
@@ -103,15 +176,6 @@ export class VideoQueryService {
     return this.videoRepo.findOne({ where: { id: chunk.videoId } });
   }
 
-  // async getVideoQualities(videoId: string): Promise<string[]> {
-  //   const rows = await this.chunkRepo
-  //     .createQueryBuilder('c')
-  //     .select('DISTINCT c.quality', 'quality')
-  //     .where('c.videoId = :videoId AND c.quality IS NOT NULL', { videoId })
-  //     .getRawMany<{ quality: string }>();
-  //   return rows.map((r) => r.quality).sort((a, b) => parseInt(b) - parseInt(a));
-  // }
-
   async getVideoQualities(videoId: string): Promise<string[]> {
     const rows = await this.chunkRepo
       .createQueryBuilder('c')
@@ -119,7 +183,7 @@ export class VideoQueryService {
       .where('c.videoId = :videoId AND c.quality IS NOT NULL', { videoId })
       .getRawMany<{ quality: string }>();
 
-    const priority = { HD: 2, SD: 1 };
+    const priority: Record<string, number> = { HD: 2, SD: 1 };
     return rows
       .map((r) => r.quality)
       .sort((a, b) => (priority[b] || 0) - (priority[a] || 0));
@@ -139,40 +203,46 @@ export class VideoQueryService {
     videoId: string,
     limit: number = 12,
     excludeIds: string[] = [],
-    user?: AuthUser,
+    user?: AuthUser | null,
   ): Promise<{ data: Video[]; hasMore: boolean }> {
     const baseVideo = await this.findOne(videoId, user);
 
-    const currentUserId = user?.userId ?? 'none';
     const isAdmin = user?.roles.includes(Role.ADMIN) ?? false;
-    
+    const isMember = user?.roles.includes(Role.MEMBER) ?? false;
+    const currentUserId = user?.userId ?? 'none';
+
     const qb = this.videoRepo.createQueryBuilder('v');
-    
-    // Exclude the current video
     qb.where('v.id != :videoId', { videoId });
-    // Must be ready
     qb.andWhere("v.status = 'ready'");
 
-    // Exclude recently watched videos
     if (excludeIds.length > 0) {
       qb.andWhere('v.id NOT IN (:...excludeIds)', { excludeIds });
     }
 
-    // Role-based visibility
-    if (!isAdmin) {
+    // Same access matrix as findAll
+    if (isAdmin) {
       qb.andWhere(
         new Brackets((hb) => {
-          hb.where('v.visibility = :public').orWhere('v.ownerId = :userId');
+          hb.where('v.visibility IN (:...adminVisible)', {
+            adminVisible: [
+              VideoVisibility.PUBLIC,
+              VideoVisibility.ROLE_RESTRICTED,
+            ],
+          }).orWhere('v.ownerId = :userId', { userId: currentUserId });
         }),
       );
-      qb.setParameters({
-        public: VideoVisibility.PUBLIC,
-        userId: currentUserId,
-      });
+    } else if (isMember) {
+      qb.andWhere(
+        new Brackets((hb) => {
+          hb.where('v.visibility = :public', {
+            public: VideoVisibility.PUBLIC,
+          }).orWhere('v.ownerId = :userId', { userId: currentUserId });
+        }),
+      );
+    } else {
+      qb.andWhere('v.visibility = :public', { public: VideoVisibility.PUBLIC });
     }
 
-    // Recommendation Scoring weights
-    // Match category gives top priority
     if (baseVideo.category) {
       qb.addSelect(
         `CASE WHEN v.category = :category THEN 1 ELSE 0 END`,
@@ -182,18 +252,10 @@ export class VideoQueryService {
       qb.orderBy('category_score', 'DESC');
     }
 
-    // Add randomization to shuffle same-weight videos to prevent looping A -> B -> A
-    // RANDOM() is Postgres specific but works gracefully here
     qb.addOrderBy('RANDOM()');
-
-    // Fetch one extra to determine hasMore
     qb.take(limit + 1);
 
     const result = await qb.getMany();
-    
-    return {
-      data: result.slice(0, limit),
-      hasMore: result.length > limit,
-    };
+    return { data: result.slice(0, limit), hasMore: result.length > limit };
   }
 }

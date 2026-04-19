@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, FormEvent, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signIn } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 
 /** Auth0 "Good" password policy rules */
 const PASSWORD_RULES = [
@@ -87,6 +87,14 @@ function PasswordStrength({ password }: { password: string }) {
 
 export default function SignupPage() {
   const router = useRouter();
+  const { status } = useSession();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.replace("/");
+    }
+  }, [status, router]);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");

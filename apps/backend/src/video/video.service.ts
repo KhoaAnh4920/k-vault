@@ -10,7 +10,7 @@ import {
 } from './dto/video.dto';
 import type { AuthUser } from '../auth/jwt.strategy';
 
-/** Facade service retaining the old interface for controllers */
+/** Facade that delegates to VideoQueryService / VideoCommandService */
 @Injectable()
 export class VideoService {
   constructor(
@@ -18,22 +18,27 @@ export class VideoService {
     private readonly commandService: VideoCommandService,
   ) {}
 
-  async initiateUpload(dto: InitUploadDto, ownerId: string) {
+  initiateUpload(dto: InitUploadDto, ownerId: string) {
     return this.commandService.initiateUpload(dto, ownerId);
   }
 
-  async create(dto: CreateVideoDto, ownerId: string): Promise<Video> {
-    return this.commandService.create(dto, ownerId);
+  create(
+    dto: CreateVideoDto,
+    ownerId: string,
+    roles: string[],
+  ): Promise<Video> {
+    return this.commandService.create(dto, ownerId, roles);
   }
 
-  async findAll(
+  findAll(
     category?: string,
-    user?: AuthUser,
+    user?: AuthUser | null,
     page?: number,
     limit?: number,
     search?: string,
     sortBy?: string,
     sortOrder?: 'ASC' | 'DESC',
+    ownerOnly?: boolean,
   ): Promise<{ data: Video[]; hasMore: boolean; total: number }> {
     return this.queryService.findAll(
       category,
@@ -43,18 +48,27 @@ export class VideoService {
       search,
       sortBy,
       sortOrder,
+      ownerOnly,
     );
   }
 
-  async findOne(id: string, user?: AuthUser): Promise<Video> {
-    return this.queryService.findOne(id, user);
+  findOne(
+    id: string,
+    user?: AuthUser | null,
+    shareToken?: string,
+  ): Promise<Video> {
+    return this.queryService.findOne(id, user, shareToken);
   }
 
-  async findVideoByChunkFileId(driveFileId: string): Promise<Video | null> {
+  findByShareToken(shareToken: string): Promise<Video> {
+    return this.queryService.findByShareToken(shareToken);
+  }
+
+  findVideoByChunkFileId(driveFileId: string): Promise<Video | null> {
     return this.queryService.findVideoByChunkFileId(driveFileId);
   }
 
-  async updateStatus(
+  updateStatus(
     id: string,
     status: VideoStatus,
     extra?: Partial<
@@ -70,43 +84,51 @@ export class VideoService {
     return this.commandService.updateStatus(id, status, extra);
   }
 
-  async saveChunks(
+  saveChunks(
     videoId: string,
     chunks: Array<{ filename: string; driveFileId: string; sequence: number }>,
   ): Promise<void> {
     return this.commandService.saveChunks(videoId, chunks);
   }
 
-  async getVideoQualities(videoId: string): Promise<string[]> {
+  getVideoQualities(videoId: string): Promise<string[]> {
     return this.queryService.getVideoQualities(videoId);
   }
 
-  async getChunksByQuality(
-    videoId: string,
-    quality: string,
-  ): Promise<VideoChunk[]> {
+  getChunksByQuality(videoId: string, quality: string): Promise<VideoChunk[]> {
     return this.queryService.getChunksByQuality(videoId, quality);
   }
 
-  async updateMetadata(
+  updateMetadata(
     id: string,
-    ownerId: string,
+    requesterId: string,
     dto: UpdateVideoMetadataDto,
-    isAdmin = false,
+    roles: string[],
   ): Promise<Video> {
-    return this.commandService.updateMetadata(id, ownerId, dto, isAdmin);
+    return this.commandService.updateMetadata(id, requesterId, dto, roles);
   }
 
-  async getRelated(
+  getRelated(
     videoId: string,
     limit: number = 12,
     excludeIds: string[] = [],
-    user?: AuthUser,
+    user?: AuthUser | null,
   ): Promise<{ data: Video[]; hasMore: boolean }> {
     return this.queryService.getRelated(videoId, limit, excludeIds, user);
   }
 
-  async remove(id: string): Promise<void> {
-    return this.commandService.remove(id);
+  remove(id: string, requesterId: string, roles: string[]): Promise<void> {
+    return this.commandService.remove(id, requesterId, roles);
+  }
+
+  generateShareToken(
+    videoId: string,
+    requesterId: string,
+  ): Promise<{ shareToken: string }> {
+    return this.commandService.generateShareToken(videoId, requesterId);
+  }
+
+  revokeShareToken(videoId: string, requesterId: string): Promise<void> {
+    return this.commandService.revokeShareToken(videoId, requesterId);
   }
 }

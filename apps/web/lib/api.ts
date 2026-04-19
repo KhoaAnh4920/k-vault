@@ -40,12 +40,13 @@ export interface Video {
   id: string;
   title: string;
   description: string | null;
-  status: "processing" | "ready" | "error";
+  status: "waiting" | "processing" | "ready" | "error";
   category: string | null;
   durationSeconds: number | null;
   views: number;
-  visibility: "public" | "private";
+  visibility: "public" | "private" | "unlisted" | "role_restricted";
   ownerId: string | null;
+  shareToken?: string | null;
   createdAt: string;
   updatedAt: string;
   thumbnailDriveFileId?: string | null;
@@ -134,6 +135,7 @@ export const videoApi = {
     limit?: number;
     search?: string;
     sort?: string;
+    ownerOnly?: boolean;
   }) =>
     api
       .get<PaginatedVideos>("/videos", { params })
@@ -162,7 +164,7 @@ export const videoApi = {
     category?: string;
     rawDriveFileId: string;
     thumbnailBase64?: string;
-    visibility?: "public" | "private";
+    visibility?: "public" | "private" | "unlisted" | "role_restricted";
   }) => api.post<Video>("/videos", payload).then((r) => r.data),
 
   updateMetadata: (
@@ -171,12 +173,25 @@ export const videoApi = {
       title?: string;
       description?: string;
       category?: string;
-      visibility?: "public" | "private";
+      visibility?: "public" | "private" | "unlisted" | "role_restricted";
       thumbnailBase64?: string;
     },
   ) => api.patch<Video>(`/videos/${id}`, payload).then((r) => r.data),
 
   remove: (id: string) => api.delete(`/videos/${id}`),
+
+  /** Generate a share token for a video (sets it to Unlisted). Owner only. */
+  generateShareLink: (id: string) =>
+    api
+      .post<{ shareToken: string }>(`/videos/${id}/share`)
+      .then((r) => r.data),
+
+  /** Revoke the share token (resets video to Private). Owner only. */
+  revokeShareLink: (id: string) => api.delete(`/videos/${id}/share`),
+
+  /** Fetch a video by its share token (for unlisted share pages). */
+  getByShareToken: (shareToken: string) =>
+    api.get<Video>(`/videos/shared/${shareToken}`).then((r) => r.data),
 
   getPlaylistUrl: (videoId: string) => `${API_BASE}/stream/${videoId}/playlist`,
 

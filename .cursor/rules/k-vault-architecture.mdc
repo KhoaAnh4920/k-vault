@@ -1,0 +1,55 @@
+---
+description: K-Vault — bối cảnh hệ thống, luồng dữ liệu, stack và bản đồ file (luôn áp dụng)
+alwaysApply: true
+---
+
+# K-Vault — Kiến trúc & ngữ cảnh dự án
+
+## Mục tiêu sản phẩm
+
+Self-hosted nền tảng xem video kiểu YouTube: upload lên Google Drive, worker transcode HLS (FFmpeg) cục bộ, phát lại qua NestJS (rewrite playlist + proxy chunk).
+
+## Monorepo (Turborepo + pnpm)
+
+| App | Port mặc định | Vai trò |
+|-----|----------------|---------|
+| `apps/web` | 3000 | Next.js App Router, Tailwind v4, hls.js, NextAuth + Auth0 |
+| `apps/backend` | 3001 | NestJS 11, TypeORM, BullMQ, storage adapter (Drive/S3) |
+| `apps/worker` | — | BullMQ consumer, FFmpeg, `pg` thuần, Drive upload/download |
+
+**Packages**: `@repo/ui`, `@repo/eslint-config`, `@repo/typescript-config`. Logic dùng chung backend + worker → đặt trong package shared (theo guideline repo), không copy-paste.
+
+## Hạ tầng ngoài
+
+- **DB**: Neon Postgres (TypeORM trên backend; worker dùng raw SQL).
+- **Queue**: Upstash Redis + BullMQ, queue transcode (hằng số trong `apps/backend/src/queue/`).
+- **Lưu trữ video**: Google Drive là đường chính; có abstraction storage (interface + adapter).
+
+## Luồng dữ liệu (chuẩn)
+
+1. **Upload**: Web tạo bản ghi video → backend cấp session upload resumable (Drive) → browser PUT thẳng lên Google → PATCH lưu `rawDriveFileId` → đẩy job `transcode`.
+2. **Transcode**: Worker tải raw từ Drive → FFmpeg HLS → tạo thư mục con `{videoId}/` trong folder gốc Drive → upload `.ts` + `playlist.m3u8` → ghi chunk + `hls_folder_drive_id` → trạng thái `ready`.
+3. **Stream**: Client lấy `GET …/playlist.m3u8` → backend đọc playlist từ Drive, rewrite URL segment → client gọi endpoint chunk → backend proxy từ Drive.
+
+## API backend
+
+- Global prefix: `process.env.API_PREFIX ?? 'api'` → URL thực tế là `/{prefix}/…` (dev thường là `/api/...`).
+- Frontend: `NEXT_PUBLIC_API_URL` trỏ origin backend; client axios trong `apps/web/lib/api.ts` dùng base URL đã gồm path API — **không** tự ý bỏ `/api` nếu chưa khớp cấu hình.
+
+## Biến môi trường (tóm tắt)
+
+Backend validate qua `apps/backend/src/config/env.validation.ts` (bắt buộc): `DATABASE_URL`, `REDIS_URL`, Google OAuth/Drive (`GOOGLE_*`, `DRIVE_FOLDER_ID`), `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`. Worker: `dotenv` + biến Drive/Redis/DB tương ứng job. `main.ts` có thể bật CORS rộng (`origin: '*'`) — khi deploy production cần siết lại nếu yêu cầu bảo mật.
+
+## Bản đồ file “vào là hiểu”
+
+| Khu vực | File |
+|---------|------|
+| Drive (backend) | `apps/backend/src/storage/google-drive.adapter.ts` |
+| Video domain | `apps/backend/src/video/*.service.ts`, `video.controller.ts`, `entities/` |
+| Stream | `apps/backend/src/stream/stream.service.ts`, `stream.controller.ts` |
+| Worker DB | `apps/worker/src/db.ts` |
+| Worker Drive | `apps/worker/src/drive.ts`, `storage/` |
+| Transcode | `apps/worker/src/ffmpeg.ts`, `transcode/` |
+| Web API client | `apps/web/lib/api.ts` |
+
+Khi thêm tính năng, bám đúng ranh giới: controller mỏng, service xử lý nghiệp vụ, adapter bọc vendor.

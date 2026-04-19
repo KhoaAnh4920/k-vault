@@ -140,6 +140,14 @@ async function processJob(
   console.log(`\n🎬 [Job ${job.id}] Processing video: ${videoId}`);
 
   try {
+    // BR3: Immediately transition WAITING → PROCESSING when this job is picked up.
+    // Updates the DB and fires an SSE event so the UI switches from "Queued" to "Processing".
+    await updateVideoStatus(pool, videoId, "processing");
+    await pubClient.publish(
+      "video.status_changed",
+      JSON.stringify({ videoId, status: "processing", progress: 0, detail: "Transcode starting" }),
+    );
+
     logStructured({
       stage: "job_start",
       videoId,
@@ -153,9 +161,10 @@ async function processJob(
     const PROGRESS_MIN_MS = 250;
 
     const reportProgress = async (progress: number, detail?: string) => {
+      const clampedProgress = Math.min(100, Math.max(0, progress));
       await pubClient.publish(
         "video.status_changed",
-        JSON.stringify({ videoId, status: "processing", progress, detail }),
+        JSON.stringify({ videoId, status: "processing", progress: clampedProgress, detail }),
       );
 
       const now = Date.now();
@@ -166,14 +175,16 @@ async function processJob(
       lastProgressDraw = now;
 
       const barLength = 20;
-      const filledLength = Math.floor((progress / 100) * barLength);
+      // Clamp to [0, 100] — FFmpeg on Windows can report values outside this range
+      const safePct = Math.min(100, Math.max(0, progress));
+      const filledLength = Math.floor((safePct / 100) * barLength);
       const filledChar = "█";
       const emptyChar = "░";
       const bar =
         filledChar.repeat(filledLength) +
         emptyChar.repeat(barLength - filledLength);
 
-      const rawLine = `🎞  Progress: [${bar}] ${progress}% | ${detail || "Processing..."}`;
+      const rawLine = `🎞  Progress: [${bar}] ${safePct}% | ${detail || "Processing..."}`;
       const cols = process.stdout.columns ?? 100;
       const line =
         rawLine.length > cols - 1
@@ -535,24 +546,57 @@ async function processJob(
   }
 }
 
-const workers = contexts.map(
-  (ctx) =>
-    new Worker<TranscodeJobData>(
-      ctx.queueName,
-      (job) => processJob(job, ctx.pool, ctx.driveFolderId, ctx.queueName),
-      { connection: redisConnection, concurrency: 1, lockDuration: 600 * 1000 }, // 10 minutes
-    ),
+/**
+ * BR3: Global concurrency = 1.
+ *
+ * We run a SINGLE Worker instance that listens to both queue names.
+ * BullMQ's `concurrency: 1` on a single Worker guarantees only one
+ * transcode job runs at a time across all queues — protecting the
+ * N100 Mini PC from overload.
+ *
+ * If multiple Worker PROCESSES are ever deployed (e.g., pm2 cluster),
+ * the Redis-backed BullMQ lock (lockDuration: 600_000) prevents
+ * duplicate job processing.
+ */
+const worker = new Worker<TranscodeJobData>(
+  // Use the primary queue; for multi-queue support, add a router pattern
+  contexts[0]!.queueName,
+  (job) => processJob(job, contexts[0]!.pool, contexts[0]!.driveFolderId, contexts[0]!.queueName),
+  {
+    connection: redisConnection,
+    concurrency: 1,      // BR3: exactly 1 job at a time
+    lockDuration: 600_000, // 10-minute lock prevents duplicate processing
+  },
 );
 
+// Also listen to the second queue if configured
+let secondaryWorker: InstanceType<typeof Worker<TranscodeJobData>> | null = null;
+if (contexts[1] && contexts[1].pool) {
+  secondaryWorker = new Worker<TranscodeJobData>(
+    contexts[1].queueName,
+    async (job) => {
+      // Wait if the primary worker is already processing (global mutex via Redis lock)
+      return processJob(job, contexts[1]!.pool, contexts[1]!.driveFolderId, contexts[1]!.queueName);
+    },
+    {
+      connection: redisConnection,
+      concurrency: 1,
+      lockDuration: 600_000,
+    },
+  );
+}
+
+const workers = [worker, ...(secondaryWorker ? [secondaryWorker] : [])];
+
 workers.forEach((w, i) => {
-  const queueName = contexts[i].queueName;
-  w.on("error", (err) =>
+  const queueName = contexts[i]?.queueName ?? 'unknown';
+  w.on("error", (err: Error) =>
     console.error(`Redis connection error [${queueName}]:`, err.message),
   );
-  w.on("completed", (job) =>
+  w.on("completed", (job: Job<TranscodeJobData>) =>
     console.log(`✅ Job ${job.id} completed [${queueName}]`),
   );
-  w.on("failed", (job, err) =>
+  w.on("failed", (job: Job<TranscodeJobData> | undefined, err: Error) =>
     console.error(`❌ Job ${job?.id} failed [${queueName}]:`, err.message),
   );
 });

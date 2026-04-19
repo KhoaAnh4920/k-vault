@@ -25,7 +25,7 @@ export interface VideoChunkRow {
 export async function updateVideoStatus(
   pool: Pool,
   videoId: string,
-  status: "processing" | "ready" | "error",
+  status: "waiting" | "processing" | "ready" | "error",
   extra?: {
     playlistDriveFileId?: string;
     durationSeconds?: number;

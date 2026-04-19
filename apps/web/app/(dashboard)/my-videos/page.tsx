@@ -18,17 +18,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
+import { CategoryPills } from "@/components/CategoryPills";
 import { VideoCard } from "@/components/VideoCard";
-
-const CATEGORY_LABELS: Record<string, string> = {
-  entertainment: "Entertainment",
-  education: "Education",
-  music: "Music",
-  gaming: "Gaming",
-  sports: "Sports",
-  tech: "Tech",
-  other: "Other",
-};
 
 function SkeletonCard() {
   return (
@@ -43,9 +34,11 @@ function SkeletonCard() {
   );
 }
 
-export default function HomePage() {
+export default function MyVideosPage() {
   const { data: session } = useSession();
   const isAdmin = (session?.user?.roles ?? []).includes("admin");
+  const isMember = (session?.user?.roles ?? []).includes("member");
+  const isAuthenticated = !!session?.user;
 
   const [videos, setVideos] = useState<Video[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -64,10 +57,6 @@ export default function HomePage() {
   // Pagination
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-
-  // Unique categories extracted locally for the filter bar
-  // (In a real scalable app, this might come from a distinct backend endpoint)
-  const availableCategories = Object.keys(CATEGORY_LABELS);
 
   const { ref, inView } = useInView({ threshold: 0.1 });
 
@@ -101,6 +90,7 @@ export default function HomePage() {
           category: cat,
           search: search || undefined,
           sort: sort,
+          ownerOnly: true,
         });
 
         if (isInitial) {
@@ -173,7 +163,9 @@ export default function HomePage() {
     setTotalCount((c) => c - 1);
   };
 
-  const hasProcessing = videos.some((v) => v.status === "processing");
+  const hasProcessing = videos.some(
+    (v) => v.status === "processing" || v.status === "waiting",
+  );
 
   // --- Pull to Refresh Logic ---
   const [pullDistance, setPullDistance] = useState(0);
@@ -254,9 +246,8 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Main Content */}
       <div
-        className="container mx-auto px-6 max-w-[1400px] pt-16 pb-24"
+        className="container mx-auto px-4 sm:px-6 max-w-[1400px] pt-0 md:pt-8 pb-24 overflow-x-hidden"
         style={{
           transform: `translateY(${pullDistance}px)`,
           transition:
@@ -265,45 +256,23 @@ export default function HomePage() {
               : "none",
         }}
       >
-        {/* Hero */}
-        <div className="mb-12 relative">
+        <div className="mb-6 md:mb-12 relative">
           <div className="absolute inset-0 -z-10 h-full w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_50%_50%_at_0%_0%,#000_60%,transparent_100%)] opacity-[0.03]"></div>
-          <h1 className="text-5xl font-black tracking-tight mb-4 bg-gradient-to-br from-foreground via-foreground/90 to-muted-foreground bg-clip-text text-transparent">
-            Library
+          <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4 bg-gradient-to-br from-foreground via-foreground/90 to-muted-foreground bg-clip-text text-transparent">
+            My Vault
           </h1>
-          <p className="text-lg text-muted-foreground m-0 max-w-2xl font-medium">
+          <p className="text-base md:text-lg text-muted-foreground m-0 max-w-2xl font-medium">
             {loading
-              ? "Loading your collection..."
-              : `You have ${totalCount} video${totalCount !== 1 ? "s" : ""} in your vault.${hasProcessing ? " Transcoding is currently in progress." : ""}`}
+              ? "Loading collection..."
+              : `${totalCount} video${totalCount !== 1 ? "s" : ""} available.${hasProcessing ? " Transcoding in progress." : ""}`}
           </p>
         </div>
 
         {/* Category filter chips */}
-        <div className="flex gap-2.5 flex-wrap mb-10 overflow-x-auto pb-2 scrollbar-none">
-          <Button
-            variant={!activeCategory ? "default" : "secondary"}
-            className={cn(
-              "rounded-full text-[13px] h-9 px-5 transition-all shadow-sm shrink-0",
-              !activeCategory && "shadow-primary/20",
-            )}
-            onClick={() => setActiveCategory(undefined)}
-          >
-            All
-          </Button>
-          {availableCategories.map((cat) => (
-            <Button
-              key={cat}
-              variant={activeCategory === cat ? "default" : "secondary"}
-              className={cn(
-                "rounded-full text-[13px] h-9 px-5 transition-all shadow-sm shrink-0",
-                activeCategory === cat && "shadow-primary/20",
-              )}
-              onClick={() => setActiveCategory(cat)}
-            >
-              {CATEGORY_LABELS[cat] ?? cat}
-            </Button>
-          ))}
-        </div>
+        <CategoryPills 
+          activeCategory={activeCategory ?? ""} 
+          onCategoryChange={setActiveCategory} 
+        />
 
         {/* Error */}
         {error && (
@@ -314,7 +283,7 @@ export default function HomePage() {
 
         {/* Grid */}
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
             {Array.from({ length: 8 }).map((_, i) => (
               <SkeletonCard key={i} />
             ))}
@@ -347,7 +316,7 @@ export default function HomePage() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 lg:gap-8 w-full max-w-full">
               {videos.map((v) => (
                 <VideoCard
                   key={v.id}
