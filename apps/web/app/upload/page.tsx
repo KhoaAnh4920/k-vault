@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { uploadFileInChunks, videoApi } from "@/lib/api";
 import { generateThumbnails } from "@/lib/video-utils";
+import { v4 as uuidv4 } from "uuid";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,
@@ -91,7 +92,7 @@ export default function UploadPage() {
       if (!f.type.startsWith("video/")) continue;
       if (f.size > MAX_FILE_SIZE) continue;
 
-      const id = crypto.randomUUID();
+      const id = uuidv4();
       newItems.push({
         id,
         file: f,
