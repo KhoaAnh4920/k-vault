@@ -50,6 +50,12 @@ function StatusBadge({ status }: { status: Video["status"] }) {
       label: "Processing",
       cls: "border-none bg-amber-500/20 text-amber-400",
     },
+    waiting: {
+      variant: "outline",
+      dot: "⏸",
+      label: "Waiting",
+      cls: "border-none bg-indigo-500/20 text-indigo-400",
+    },
     ready: {
       variant: "outline",
       dot: "●",
