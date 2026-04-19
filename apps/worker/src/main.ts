@@ -158,47 +158,58 @@ async function processJob(
     });
 
     let lastProgressDraw = 0;
+    let lastPrintedPercentage = -10; // Allow 0% to print immediately
     const PROGRESS_MIN_MS = 250;
+    
+    // Detect PM2 or non-interactive environments
+    const isPm2 = !!process.env.pm_id || !process.stdout.isTTY;
 
     const reportProgress = async (progress: number, detail?: string) => {
-      const clampedProgress = Math.min(100, Math.max(0, progress));
+      const clampedProgress = Math.min(100, Math.max(0, Math.floor(progress)));
       await pubClient.publish(
         "video.status_changed",
         JSON.stringify({ videoId, status: "processing", progress: clampedProgress, detail }),
       );
 
+      if (isPm2) {
+        // PM2/Non-TTY Branch: Throttle logging to 10% increments or completion
+        if (clampedProgress >= lastPrintedPercentage + 10 || clampedProgress === 100) {
+          console.log(`🎞 Progress: ${clampedProgress}% | ${detail || "Processing..."}`);
+          lastPrintedPercentage = clampedProgress === 100 ? 100 : Math.floor(clampedProgress / 10) * 10;
+        }
+        return;
+      }
+
+      // Local/TTY Branch: Interactive ASCII progress bar
       const now = Date.now();
-      const forceDraw = progress >= 100;
+      const forceDraw = clampedProgress >= 100;
       if (!forceDraw && now - lastProgressDraw < PROGRESS_MIN_MS) {
         return;
       }
       lastProgressDraw = now;
 
       const barLength = 20;
-      // Clamp to [0, 100] — FFmpeg on Windows can report values outside this range
-      const safePct = Math.min(100, Math.max(0, progress));
-      const filledLength = Math.floor((safePct / 100) * barLength);
+      const filledLength = Math.floor((clampedProgress / 100) * barLength);
       const filledChar = "█";
       const emptyChar = "░";
       const bar =
         filledChar.repeat(filledLength) +
         emptyChar.repeat(barLength - filledLength);
 
-      const rawLine = `🎞  Progress: [${bar}] ${safePct}% | ${detail || "Processing..."}`;
+      const rawLine = `🎞  Progress: [${bar}] ${clampedProgress}% | ${detail || "Processing..."}`;
       const cols = process.stdout.columns ?? 100;
       const line =
         rawLine.length > cols - 1
           ? rawLine.slice(0, Math.max(20, cols - 4)) + "..."
           : rawLine;
 
-      if (!process.stdout.isTTY) {
-        process.stdout.write(`\r\x1b[K${line}`);
-        return;
-      }
-
       readline.cursorTo(process.stdout, 0);
       readline.clearLine(process.stdout, 0);
       process.stdout.write(line);
+      
+      if (forceDraw) {
+        process.stdout.write("\n");
+      }
     };
 
     const checkExists = async (stage: string) => {
