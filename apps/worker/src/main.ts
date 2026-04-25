@@ -87,6 +87,42 @@ function parseRedisUrl(rawUrl: string): {
   };
 }
 
+/**
+ * W-2: Pre-flight disk space check.
+ *
+ * Verifies that the filesystem hosting `targetDir` has at least `requiredBytes`
+ * free before we start downloading and transcoding.
+ *
+ * Uses `fs.statfsSync` (Node.js 19.6+). On older Node versions or Windows
+ * (ENOSYS), the check is skipped with a warning so existing deployments are
+ * never broken by this guard.
+ */
+function checkDiskSpace(targetDir: string, requiredBytes: number): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = (fs as any).statfsSync(targetDir);
+    if (!stats || typeof stats.bavail !== 'number' || typeof stats.bsize !== 'number') {
+      return; // Unexpected shape — skip rather than crash
+    }
+    const freeBytes: number = stats.bavail * stats.bsize;
+    if (freeBytes < requiredBytes) {
+      const freeMB = (freeBytes   / 1024 / 1024).toFixed(0);
+      const reqMB  = (requiredBytes / 1024 / 1024).toFixed(0);
+      throw new Error(
+        `Insufficient disk space: ${freeMB} MB free, ${reqMB} MB required. ` +
+        `Clear space in ${targetDir} before re-queuing this job.`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Insufficient disk space')) {
+      throw err; // Re-throw our intentional error unchanged
+    }
+    // ENOSYS (Windows), unsupported Node version, or unexpected OS error —
+    // log a warning and continue so the job is not killed by infra limitations.
+    console.warn('⚠  Disk space check unavailable:', (err as Error).message);
+  }
+}
+
 import { Redis } from "ioredis";
 
 const redisConnection = parseRedisUrl(
@@ -122,6 +158,7 @@ const contexts: EnvContext[] = [
 
 async function processJob(
   job: Job<TranscodeJobData>,
+  token: string,           // W-4: BullMQ lock token for extendLock calls
   pool: Pool,
   driveFolderId: string,
   queueName: string,
@@ -160,6 +197,10 @@ async function processJob(
     let lastProgressDraw = 0;
     let lastPrintedPercentage = -10; // Allow 0% to print immediately
     const PROGRESS_MIN_MS = 250;
+    // W-4: Track the last time we renewed the BullMQ lock.
+    // We renew at most every 60s to avoid spamming Redis on every FFmpeg tick.
+    let lastLockExtended = Date.now();
+    const LOCK_EXTEND_INTERVAL_MS = 60_000;
     
     // Detect PM2 or non-interactive environments
     const isPm2 = !!process.env.pm_id || !process.stdout.isTTY;
@@ -170,6 +211,18 @@ async function processJob(
         "video.status_changed",
         JSON.stringify({ videoId, status: "processing", progress: clampedProgress, detail }),
       );
+
+      // W-4: Extend the BullMQ lock to prevent expiry on long videos.
+      // Throttled to once per 60s; a failure is non-fatal and only logged.
+      const lockNow = Date.now();
+      if (lockNow - lastLockExtended >= LOCK_EXTEND_INTERVAL_MS) {
+        try {
+          await job.extendLock(token, 600_000);
+          lastLockExtended = lockNow;
+        } catch (lockErr) {
+          console.warn(`⚠  Failed to extend job lock for ${videoId}: ${(lockErr as Error).message}`);
+        }
+      }
 
       if (isPm2) {
         // PM2/Non-TTY Branch: Throttle logging to 10% increments or completion
@@ -222,19 +275,26 @@ async function processJob(
       }
     };
 
-    // 1. Mark as processing in DB
-    await updateVideoStatus(pool, videoId, "processing");
+    // 1. Verify video still exists (status already set to PROCESSING at line 145)
     await checkExists("initial check");
     await reportProgress(5, "Preparing...");
 
     // 2. Prepare temp directory
     fs.mkdirSync(jobDir, { recursive: true });
 
+    // 2b. W-2: Pre-flight disk check before downloading potentially large raw files.
+    // We don't know the exact size yet, so we use a conservative 5 GB fallback.
+    // The check is repeated after download with the actual raw file size.
+    const DISK_HEADROOM_MULTIPLIER = 2.5; // raw (1×) + HLS output (~1.2×) + headroom (0.3×)
+    checkDiskSpace(TEMP_BASE, 5 * 1024 * 1024 * 1024 /* 5 GB fallback */);
+
     // 3. Download raw file from Google Drive
     const downloadStarted = Date.now();
     await storage.downloadFile(rawDriveFileId, rawPath);
     await checkExists("downloading");
     const rawBytes = fs.statSync(rawPath).size;
+    // W-2: Re-check with the actual file size now that we know it precisely.
+    checkDiskSpace(TEMP_BASE, Math.ceil(rawBytes * DISK_HEADROOM_MULTIPLIER));
     logStructured({
       stage: "download_done",
       videoId,
@@ -584,10 +644,11 @@ const globalTranscodeLock = async <T>(fn: () => Promise<T>): Promise<T> => {
 const worker = new Worker<TranscodeJobData>(
   // Use the primary queue; for multi-queue support, add a router pattern
   contexts[0]!.queueName,
-  (job) =>
+  (job, token) =>  // W-4: Capture token for lock extension inside processJob
     globalTranscodeLock(() =>
       processJob(
         job,
+        token ?? '',
         contexts[0]!.pool,
         contexts[0]!.driveFolderId,
         contexts[0]!.queueName,
@@ -605,10 +666,11 @@ let secondaryWorker: InstanceType<typeof Worker<TranscodeJobData>> | null = null
 if (contexts[1] && contexts[1].pool) {
   secondaryWorker = new Worker<TranscodeJobData>(
     contexts[1].queueName,
-    (job) =>
+    (job, token) =>  // W-4: Capture token for lock extension
       globalTranscodeLock(() =>
         processJob(
           job,
+          token ?? '',
           contexts[1]!.pool,
           contexts[1]!.driveFolderId,
           contexts[1]!.queueName,

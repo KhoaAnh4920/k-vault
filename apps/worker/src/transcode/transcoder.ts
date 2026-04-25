@@ -1,10 +1,51 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import ffmpeg from 'fluent-ffmpeg';
 import { CodecDetector } from './codec-detector';
 import { DeviceDetector, DeviceInfo } from './device-detector';
 import { QualityPreset } from './quality';
 import { logStructured } from '../structured-log';
+
+// ─── W-1: Hardware-Aware Transcoding Strategy ────────────────────────────────
+//
+// On constrained hardware (Intel N100 / 8 GB RAM), running multiple FFmpeg
+// instances concurrently can exhaust available RAM or cause thermal throttling.
+// Thresholds below match the N100 profile; powerful workstations exceed both.
+//
+// Override at deploy time via env var (no code change needed):
+//   TRANSCODE_STRATEGY=parallel    → always parallel (high-end workstation)
+//   TRANSCODE_STRATEGY=sequential  → always sequential (force safe mode)
+
+const CONSTRAINED_CPU_THRESHOLD = 8;                      // cores
+const CONSTRAINED_RAM_THRESHOLD = 16 * 1024 * 1024 * 1024; // 16 GB in bytes
+
+export type TranscodeStrategy = 'sequential' | 'parallel';
+
+export function getTranscodeStrategy(): TranscodeStrategy {
+  // 1. Respect explicit environment override first
+  const envOverride = process.env.TRANSCODE_STRATEGY?.toLowerCase();
+  if (envOverride === 'parallel')   return 'parallel';
+  if (envOverride === 'sequential') return 'sequential';
+
+  // 2. Detect hardware capabilities safely
+  let cores    = 4; // conservative fallback — treated as constrained
+  let totalMem = 0; // unknown → treated as constrained
+
+  try {
+    cores    = os.cpus().length;
+    totalMem = os.totalmem();
+  } catch {
+    // os module failure is extremely unlikely, but we guard defensively
+    console.warn('⚠  Could not read system hardware info; defaulting to sequential transcode.');
+    return 'sequential';
+  }
+
+  const isConstrained =
+    cores < CONSTRAINED_CPU_THRESHOLD || totalMem < CONSTRAINED_RAM_THRESHOLD;
+
+  return isConstrained ? 'sequential' : 'parallel';
+}
 
 export interface TranscodeLogContext {
   videoId?: string;
@@ -196,14 +237,20 @@ export async function transcodeToHls(
 ): Promise<TranscodeResult> {
   const codec = await codecDetector.detect();
   const device = DeviceDetector.getInfo();
+  const strategy = getTranscodeStrategy();
+
+  // Safely read totalMem for the structured log (mirrors what getTranscodeStrategy already read)
+  let totalMemBytes: number | null = null;
+  try { totalMemBytes = os.totalmem(); } catch { /* ignore */ }
 
   logStructured({
     stage: 'transcode_plan',
     codec,
     segmentTime,
-    parallelQualityTiers: qualities.length,
+    strategy,
     qualityNames: qualities.map((q) => q.name),
     cpuCoresUsed: device.cores,
+    totalMemBytes,
     ...logContext,
   });
 
@@ -218,40 +265,58 @@ export async function transcodeToHls(
     onProgress(avg);
   };
 
-  const results = await Promise.all(
-    qualities.map(async (quality) => {
-      logStructured({
-        stage: 'transcode_tier_start',
-        codec,
-        quality: quality.name,
-        height: quality.height,
-        videoBitrate: quality.videoBitrate,
-        ...logContext,
-      });
-      if (onQualityStart) await onQualityStart(quality.name);
-      const qualityDir = path.join(outputBaseDir, quality.name);
-      fs.mkdirSync(qualityDir, { recursive: true });
+  // Shared per-quality work unit — used by both the sequential and parallel paths.
+  // Extracting into a named function guarantees both strategies run identical logic.
+  const processQuality = async (quality: QualityPreset): Promise<number> => {
+    logStructured({
+      stage: 'transcode_tier_start',
+      codec,
+      quality: quality.name,
+      height: quality.height,
+      videoBitrate: quality.videoBitrate,
+      ...logContext,
+    });
+    if (onQualityStart) await onQualityStart(quality.name);
+    const qualityDir = path.join(outputBaseDir, quality.name);
+    fs.mkdirSync(qualityDir, { recursive: true });
 
-      return transcodeQuality(
-        inputPath,
-        qualityDir,
-        quality,
-        codec,
-        segmentTime,
-        device,
-        (p) => {
-          progressMap.set(quality.name, p);
-          notifyProgress();
-        },
-        logContext,
-      );
-    }),
-  );
+    return transcodeQuality(
+      inputPath,
+      qualityDir,
+      quality,
+      codec,
+      segmentTime,
+      device,
+      (p) => {
+        progressMap.set(quality.name, p);
+        notifyProgress();
+      },
+      logContext,
+    );
+  };
+
+  let results: number[];
+
+  if (strategy === 'sequential') {
+    // ─── Sequential path ─────────────────────────────────────────────────────
+    // Safe for constrained hardware (N100 / 8 GB). FFmpeg gets the full CPU
+    // budget for each quality tier before the next one starts.
+    results = [];
+    for (const quality of qualities) {
+      results.push(await processQuality(quality));
+    }
+  } else {
+    // ─── Parallel path ───────────────────────────────────────────────────────
+    // For powerful workstations (≥ 8 cores, ≥ 16 GB RAM). All quality tiers
+    // transcode concurrently for maximum throughput.
+    results = await Promise.all(qualities.map(processQuality));
+  }
 
   const durationSeconds = Math.max(0, ...results);
   logStructured({
     stage: 'transcode_hls_done',
     codec,
+    strategy,
     durationSeconds,
     ...logContext,
   });
