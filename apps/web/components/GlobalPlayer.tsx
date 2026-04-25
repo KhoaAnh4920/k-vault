@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useVideoPlayer } from "@/lib/stores/usePlayerStore";
+import { useVideoPlayer, globalPlayerRef } from "@/lib/stores/usePlayerStore";
 import {
   MediaPlayer,
   MediaProvider,
@@ -37,15 +37,40 @@ export function GlobalPlayer() {
     loop,
     ambient,
     placeholderNode,
+    volume,
+    muted,
+    onTimeUpdateCallback,
+    onEndedCallback,
     actions,
   } = playerStore;
 
   const playerRef = useRef<MediaPlayerInstance>(null);
   const tokenRef = useRef<string | undefined>(accessToken);
 
+  // Autoplay fix: tracks whether we've already unmuted after the first
+  // autoplay success. Resets on each new video so the muted-start behaviour
+  // applies fresh for every navigation.
+  const hasUnmutedRef = useRef(false);
+
   useEffect(() => {
     tokenRef.current = accessToken;
   }, [accessToken]);
+
+  // ── Sync playerRef → global ref so the watch page can access it ────────
+  // The watch page needs to access the player for duration and seeking.
+  // We use a plain global ref to safely pass this instance without corrupting
+  // it inside React or Zustand's reactive proxies.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      globalPlayerRef.current = playerRef.current;
+    });
+    return () => {
+      cancelAnimationFrame(id);
+      globalPlayerRef.current = null;
+    };
+  // Re-sync on each new video
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeVideo?.id]);
 
   const isWatchPage = pathname.startsWith("/watch/");
 
@@ -236,6 +261,44 @@ export function GlobalPlayer() {
         autoplay={autoplay}
         loop={loop}
         playsInline
+        // ── Autoplay Policy Fix ───────────────────────────────────────────────
+        // Browsers block autoplay with sound. We start muted to satisfy the
+        // policy, then restore the user's saved volume/muted on the first play.
+        muted={autoplay && !hasUnmutedRef.current ? true : muted}
+        volume={volume}
+        onPlay={() => {
+          if (autoplay && !hasUnmutedRef.current) {
+            hasUnmutedRef.current = true;
+            // Small delay lets Vidstack's play() promise settle before we
+            // mutate the player — avoids an AbortError race condition.
+            setTimeout(() => {
+              if (playerRef.current) {
+                playerRef.current.muted = muted;
+                playerRef.current.volume = volume;
+              }
+            }, 50);
+          }
+        }}
+        onVolumeChange={(detail) => {
+          // If we are currently forcing a muted start to satisfy browser policy,
+          // ignore volume changes so we don't permanently overwrite the user's
+          // unmuted preference in the persistent store.
+          if (autoplay && !hasUnmutedRef.current) return;
+
+          // Sync volume/muted changes back to the persisted store
+          actions.setVolume(detail.volume);
+          actions.setMuted(detail.muted);
+        }}
+        onTimeUpdate={(detail) => {
+          // Forward to the watch page's handler via the store callback slot.
+          // This restores the Up Next countdown + auto-advance that was broken
+          // when <MediaPlayer> was hoisted out of the watch page.
+          onTimeUpdateCallback?.(detail);
+        }}
+        onEnded={() => {
+          // Forward to the watch page's loop handler via the store callback slot.
+          onEndedCallback?.();
+        }}
         onProviderChange={handleProviderChange}
         onPictureInPictureChange={(active) => {
           setIsPiP(active);

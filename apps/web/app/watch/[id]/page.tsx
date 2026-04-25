@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { videoApi, type Video } from "@/lib/api";
-import { useVideoPlayer } from "@/lib/stores/usePlayerStore";
+import { useVideoPlayer, globalPlayerRef } from "@/lib/stores/usePlayerStore";
 import { cn } from "@/lib/utils";
 import {
   isHLSProvider,
@@ -23,6 +23,7 @@ import {
   Share2,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -227,10 +228,8 @@ function UpNextOverlay({
 }
 
 function AmbientBackground({
-  playerRef,
   enabled,
 }: {
-  playerRef: React.RefObject<MediaPlayerInstance | null>;
   enabled: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -242,7 +241,7 @@ function AmbientBackground({
 
     const draw = (now: number) => {
       if (now - lastDraw >= 100) {
-        const videoElement = playerRef.current?.el?.querySelector("video");
+        const videoElement = globalPlayerRef.current?.el?.querySelector("video");
         const canvas = canvasRef.current;
         if (videoElement && canvas && videoElement.readyState >= 2) {
           const ctx = canvas.getContext("2d");
@@ -263,7 +262,7 @@ function AmbientBackground({
 
     animationFrameId = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [enabled, playerRef]);
+  }, [enabled]);
 
   if (!enabled) return null;
 
@@ -304,7 +303,9 @@ export default function WatchPage() {
   const [countdown, setCountdown] = useState(0);
 
   const { actions, ambient, autoplay, loop } = useVideoPlayer();
-  const playerRef = useRef<MediaPlayerInstance>(null);
+  // NOTE: playerRef has been removed. The live player instance is now shared
+  // via globalPlayerRef, set by GlobalPlayer after mount.
+  // This fixes the 'dead ref' bug while avoiding Zustand proxy corruption.
 
   // Derived from state — must be after useState declarations
   const currentUserId = session?.user?.id ?? null;
@@ -518,7 +519,7 @@ export default function WatchPage() {
     (detail: { currentTime: number }) => {
       if (!video) return;
 
-      const dur = playerRef.current?.state.duration || 0;
+      const dur = globalPlayerRef.current?.state.duration || 0;
       if (dur > 0) {
         const rem = Math.ceil(dur - detail.currentTime);
         if (rem <= 10 && autoplay && !loop && relatedVideos.length > 0) {
@@ -561,19 +562,32 @@ export default function WatchPage() {
   );
 
   const handleEnded = useCallback(() => {
-    if (loop && playerRef.current) {
-      playerRef.current.currentTime = 0;
-      playerRef.current.play();
+    if (loop && globalPlayerRef.current) {
+      globalPlayerRef.current.currentTime = 0;
+      globalPlayerRef.current.play();
     }
   }, [loop]);
 
   // Jump to specific time (Timestamps click)
   const handleSeek = (secs: number) => {
-    if (playerRef.current) {
-      playerRef.current.currentTime = secs;
-      playerRef.current.play();
+    if (globalPlayerRef.current) {
+      globalPlayerRef.current.currentTime = secs;
+      globalPlayerRef.current.play();
     }
   };
+
+  // ── Register event callbacks into the store ────────────────────────────────
+  // GlobalPlayer's <MediaPlayer> fires onTimeUpdate and onEnded, and forwards
+  // them here via the store's callback slots. This is the bridge that restores
+  // the Up Next popup and auto-advance that broke during the player hoist.
+  useEffect(() => {
+    actions.setOnTimeUpdateCallback(handleTimeUpdate);
+    actions.setOnEndedCallback(handleEnded);
+    return () => {
+      actions.setOnTimeUpdateCallback(null);
+      actions.setOnEndedCallback(null);
+    };
+  }, [handleTimeUpdate, handleEnded, actions]);
 
   if (loading) {
     return (
@@ -607,7 +621,7 @@ export default function WatchPage() {
           {video.status === "ready" ? (
             <div className="relative mb-4 sm:mb-6">
               {ambient && (
-                <AmbientBackground playerRef={playerRef} enabled={ambient} />
+                <AmbientBackground enabled={ambient} />
               )}
 
               <div className="rounded-xl overflow-hidden shadow-2xl shadow-black/80 bg-transparent relative z-10 border border-border/10">
@@ -639,7 +653,7 @@ export default function WatchPage() {
               </div>
 
               {/* UpNext Overlay */}
-              {showUpNext && relatedVideos.length > 0 && relatedVideos[0] && (
+              {showUpNext && relatedVideos.length > 0 && relatedVideos[0] && globalPlayerRef.current?.el && createPortal(
                 <UpNextOverlay
                   nextVideo={relatedVideos[0]}
                   countdown={countdown}
@@ -647,7 +661,8 @@ export default function WatchPage() {
                     setShowUpNext(false);
                     actions.setAutoplay(false);
                   }}
-                />
+                />,
+                globalPlayerRef.current.el
               )}
             </div>
           ) : (

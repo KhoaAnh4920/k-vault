@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { toast } from "sonner";
 import { useSession } from "next-auth/react";
 import { videoApi, type Video, type PaginatedVideos } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -45,6 +46,12 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [fetchingMore, setFetchingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // UX-4: Tracks videoId → title for videos currently processing.
+  // Stored in a ref (not state) so the SSE callback — which is defined inside
+  // a useEffect([]) and captures a stale closure — can always read the current
+  // title without a stale-closure bug.
+  const processingTitlesRef = useRef<Map<string, string>>(new Map());
 
   // Filters
   const [activeCategory, setActiveCategory] = useState<string | undefined>(
@@ -140,12 +147,42 @@ export default function HomePage() {
     fetchVideos,
   ]);
 
+  // UX-4: Keep processingTitlesRef in sync with the videos list.
+  // When a video enters processing/waiting, store its title for the toast.
+  // When it leaves that state, remove it to avoid stale entries.
+  useEffect(() => {
+    videos.forEach((v) => {
+      if (v.status === "processing" || v.status === "waiting") {
+        processingTitlesRef.current.set(v.id, v.title);
+      } else {
+        processingTitlesRef.current.delete(v.id);
+      }
+    });
+  }, [videos]);
+
   // Real-time Video Status SSE
   useEffect(() => {
     const abortCtrl = new AbortController();
 
     void videoApi
       .subscribeToEvents((data) => {
+        // UX-4: Fire a toast when a video we were tracking transitions to 'ready'.
+        if (data.status === "ready") {
+          const title = processingTitlesRef.current.get(data.videoId);
+          if (title) {
+            toast.success(`"${title}" is ready to watch!`, {
+              duration: 6000,
+              action: {
+                label: "Watch",
+                onClick: () => {
+                  window.location.href = `/watch/${data.videoId}`;
+                },
+              },
+            });
+            processingTitlesRef.current.delete(data.videoId);
+          }
+        }
+
         setVideos((prev) =>
           prev.map((v) =>
             v.id === data.videoId ? { ...v, status: data.status } : v,
