@@ -93,14 +93,21 @@ export function GlobalSearch({ open, setOpen }: { open: boolean; setOpen: (open:
                   key={video.id}
                   value={video.title + " " + video.id}
                   onSelect={() => handleSelect(video.id)}
-                  className="flex items-center gap-3 py-3 cursor-pointer"
+                  className="flex items-center gap-3 py-3 cursor-pointer mb-2 last:mb-0 rounded-lg"
                 >
-                  <div className="bg-primary/10 p-2 rounded-md shrink-0">
-                    <Play className="h-4 w-4 text-primary" />
+                  <div className="relative h-10 w-[71px] shrink-0 bg-background rounded-md overflow-hidden border border-border/50">
+                    <img 
+                      src={videoApi.getThumbnailUrl(video.id)} 
+                      alt="" 
+                      className="absolute inset-0 w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
                   </div>
-                  <div className="flex flex-col overflow-hidden">
-                    <span className="font-medium line-clamp-1 truncate">{video.title}</span>
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                  <div className="flex flex-col overflow-hidden min-w-0">
+                    <span className="font-semibold text-sm leading-tight truncate">{video.title}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">
                       {video.category || "Uncategorized"}
                     </span>
                   </div>

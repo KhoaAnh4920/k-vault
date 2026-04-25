@@ -18,6 +18,7 @@ import {
 import "@vidstack/react/player/styles/default/theme.css";
 import "@vidstack/react/player/styles/default/layouts/video.css";
 import { videoApi, type Video } from "@/lib/api";
+import { useVideoPlayer } from "@/lib/stores/usePlayerStore";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -283,84 +284,7 @@ function AmbientBackground({
   );
 }
 
-interface PlayerSettingsProps {
-  autoplay: boolean;
-  setAutoplay: (val: boolean) => void;
-  loop: boolean;
-  setLoop: (val: boolean) => void;
-  ambient: boolean;
-  setAmbient: (val: boolean) => void;
-}
-
-function PlayerSettingsMenu({
-  autoplay,
-  setAutoplay,
-  loop,
-  setLoop,
-  ambient,
-  setAmbient,
-}: PlayerSettingsProps) {
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  return (
-    <div
-      className="absolute top-4 right-4 z-50 pointer-events-auto"
-      ref={menuRef}
-    >
-      <button
-        onClick={() => setOpen(!open)}
-        className="bg-black/40 hover:bg-black/60 text-white p-2 flex rounded-full backdrop-blur-md transition-all h-9 w-9 items-center justify-center shadow-lg border border-white/10"
-      >
-        <Settings
-          className={`w-5 h-5 transition-transform duration-300 ${open ? "rotate-90" : ""}`}
-        />
-      </button>
-
-      {open && (
-        <div className="absolute top-full right-0 mt-3 w-56 bg-black/85 backdrop-blur-xl border border-white/15 rounded-xl shadow-2xl p-2 animate-in fade-in zoom-in duration-200 origin-top-right">
-          <label className="flex items-center justify-between w-full px-3 py-2.5 hover:bg-white/10 rounded-lg cursor-pointer group transition-colors">
-            <span className="text-white text-sm font-medium">Autoplay</span>
-            <input
-              type="checkbox"
-              checked={autoplay}
-              onChange={(e) => setAutoplay(e.target.checked)}
-              className="accent-primary w-4 h-4 scale-110"
-            />
-          </label>
-          <label className="flex items-center justify-between w-full px-3 py-2.5 hover:bg-white/10 rounded-lg cursor-pointer group transition-colors">
-            <span className="text-white text-sm font-medium">Loop</span>
-            <input
-              type="checkbox"
-              checked={loop}
-              onChange={(e) => setLoop(e.target.checked)}
-              className="accent-primary w-4 h-4 scale-110"
-            />
-          </label>
-          <label className="flex items-center justify-between w-full px-3 py-2.5 hover:bg-white/10 rounded-lg cursor-pointer group transition-colors">
-            <span className="text-white text-sm font-medium">Ambient Mode</span>
-            <input
-              type="checkbox"
-              checked={ambient}
-              onChange={(e) => setAmbient(e.target.checked)}
-              className="accent-primary w-4 h-4 scale-110"
-            />
-          </label>
-        </div>
-      )}
-    </div>
-  );
-}
+// Removed PlayerSettingsProps and PlayerSettingsMenu since it's hosted in GlobalPlayer.
 
 export default function WatchPage() {
   const { id } = useParams<{ id: string }>();
@@ -375,7 +299,6 @@ export default function WatchPage() {
 
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
-  const [playerError, setPlayerError] = useState<string | null>(null);
   const [startTime, setStartTime] = useState(0);
 
   const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
@@ -383,13 +306,11 @@ export default function WatchPage() {
   const [fetchingMoreRelated, setFetchingMoreRelated] = useState(false);
   const [relatedPage, setRelatedPage] = useState(1);
   const [hasMoreRelated, setHasMoreRelated] = useState(false);
-
-  const [autoplay, setAutoplay] = useState(true);
-  const [loop, setLoop] = useState(false);
-  const [ambient, setAmbient] = useState(true);
+  const [playerError, setPlayerError] = useState<string | null>(null);
   const [showUpNext, setShowUpNext] = useState(false);
-  const [countdown, setCountdown] = useState(10);
+  const [countdown, setCountdown] = useState(0);
 
+  const { actions, ambient, autoplay, loop } = useVideoPlayer();
   const playerRef = useRef<MediaPlayerInstance>(null);
 
   // Derived from state — must be after useState declarations
@@ -449,6 +370,8 @@ export default function WatchPage() {
       .get(id)
       .then((v) => {
         setVideo(v);
+        // Dispatch to Global Player Store
+        actions.playVideo(v, videoApi.getPlaylistUrl(id));
         // Sync share token from fetched video (can't do this at useState init time)
         if (v.shareToken) setShareToken(v.shareToken);
 
@@ -688,63 +611,23 @@ export default function WatchPage() {
                 <AmbientBackground playerRef={playerRef} enabled={ambient} />
               )}
 
-              <div className="rounded-xl overflow-hidden shadow-2xl shadow-black/80 bg-black relative z-10 border border-border/10 group">
-                {/* Floating Player Settings Gear */}
-                <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300">
-                  <PlayerSettingsMenu
-                    autoplay={autoplay}
-                    setAutoplay={setAutoplay}
-                    loop={loop}
-                    setLoop={setLoop}
-                    ambient={ambient}
-                    setAmbient={setAmbient}
-                  />
-                </div>
+              <div className="rounded-xl overflow-hidden shadow-2xl shadow-black/80 bg-transparent relative z-10 border border-border/10">
 
                 {sessionStatus === "loading" || !accessToken ? (
                   <div className="aspect-video flex items-center justify-center">
                     <Loader2 className="w-10 h-10 animate-spin text-primary" />
                   </div>
                 ) : (
-                  <MediaPlayer
-                    ref={playerRef}
-                    title={video.title}
-                    src={{
-                      src: videoApi.getPlaylistUrl(id),
-                      type: "application/x-mpegurl",
+                  <div
+                    id="video-placeholder"
+                    ref={(node) => {
+                       if (node) {
+                         // Small delay ensures DOM is settled before registering, avoiding race conditions
+                         requestAnimationFrame(() => actions.setPlaceholderNode(node));
+                       }
                     }}
-                    poster={videoApi.getThumbnailUrl(id)}
-                    autoplay
-                    currentTime={startTime}
-                    onTimeUpdate={handleTimeUpdate}
-                    onEnded={handleEnded}
-                    playsInline
-                    onProviderChange={handleProviderChange}
-                    onError={() =>
-                      setPlayerError(
-                        "Playback failed. Please try reloading the page.",
-                      )
-                    }
-                  >
-                    <MediaProvider />
-                    {/* Gestures for Desktop/Mobile native feel */}
-                    <Gesture
-                      className="vds-gesture"
-                      event="pointerup"
-                      action="toggle:paused"
-                    />
-                    <Gesture
-                      className="vds-gesture"
-                      event="pointerup"
-                      action="toggle:controls"
-                    />
-                    <Gesture
-                      className="vds-gesture"
-                      event="dblpointerup"
-                      action="seek:-10"
-                    />
-                    <DefaultVideoLayout icons={defaultLayoutIcons} />
-                  </MediaPlayer>
+                    className="aspect-video w-full rounded-xl bg-transparent"
+                  />
                 )}
 
                 {playerError && (
@@ -762,7 +645,7 @@ export default function WatchPage() {
                   countdown={countdown}
                   onCancel={() => {
                     setShowUpNext(false);
-                    setAutoplay(false);
+                    actions.setAutoplay(false);
                   }}
                 />
               )}

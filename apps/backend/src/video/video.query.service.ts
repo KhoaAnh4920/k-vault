@@ -78,7 +78,8 @@ export class VideoQueryService {
     }
 
     if (search) {
-      qb.andWhere('v.title ILIKE :search', { search: `%${search}%` });
+      const normalizedSearch = search.normalize('NFC');
+      qb.andWhere('unaccent(v.title) ILIKE unaccent(:search)', { search: `%${normalizedSearch}%` });
     }
 
     const orderColumn = sortBy === 'views' ? 'v.views' : 'v.createdAt';

@@ -5,10 +5,21 @@ import { Card, CardContent } from "./ui/card";
 import { videoApi, type Video } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { generateThumbnailsFromUrl } from "@/lib/video-utils";
-import { AlertCircle, Eye, Globe, Loader2, Lock, MoreVertical, Pencil, Trash2, ImagePlus } from "lucide-react";
+import {
+  AlertCircle,
+  Eye,
+  Globe,
+  Loader2,
+  Lock,
+  MoreVertical,
+  Pencil,
+  Trash2,
+  ImagePlus,
+} from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { VideoPreview } from "./VideoPreview";
 import {
   Dialog,
   DialogContent,
@@ -132,8 +143,36 @@ export function VideoCard({
   const [extractingThumbs, setExtractingThumbs] = useState(false);
   const [selectedThumb, setSelectedThumb] = useState<string | null>(null);
 
+  // ── Hover Preview ──────────────────────────────────────────────────────
+  const [isHovered, setIsHovered] = useState(false);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleMouseEnter = useCallback(() => {
+    // 500ms debounce — don't load for rapid mouse-overs
+    hoverTimerRef.current = setTimeout(() => setIsHovered(true), 500);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    setIsHovered(false);
+  }, []);
+
+  // Cleanup timer on unmount
   useEffect(() => {
-    if (isEditDialogOpen && video.status === "ready" && extractedThumbs.length === 0) {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      isEditDialogOpen &&
+      video.status === "ready" &&
+      extractedThumbs.length === 0
+    ) {
       setExtractingThumbs(true);
       generateThumbnailsFromUrl(videoApi.getPlaylistUrl(video.id), 10)
         .then((thumbs) => setExtractedThumbs(thumbs))
@@ -150,7 +189,7 @@ export function VideoCard({
       const reader = new FileReader();
       reader.onload = (event) => {
         const base64 = event.target?.result as string;
-        setExtractedThumbs(prev => {
+        setExtractedThumbs((prev) => {
           if (!prev.includes(base64)) {
             setSelectedThumb(base64);
             return [base64, ...prev].slice(0, 11);
@@ -229,7 +268,11 @@ export function VideoCard({
   };
 
   return (
-    <Card className="w-full overflow-hidden h-full flex flex-col group hover:-translate-y-1.5 hover:shadow-xl hover:shadow-primary/5 hover:border-border/80 transition-all duration-300 bg-card border-border/40 relative">
+    <Card
+      className="w-full overflow-hidden h-full flex flex-col group hover:-translate-y-1.5 hover:shadow-xl hover:shadow-primary/5 hover:border-border/80 transition-all duration-300 bg-card border-border/40 relative"
+      onMouseEnter={video.status === "ready" ? handleMouseEnter : undefined}
+      onMouseLeave={video.status === "ready" ? handleMouseLeave : undefined}
+    >
       <Link
         href={video.status === "ready" ? `/watch/${video.id}` : "#"}
         className="flex flex-col flex-1"
@@ -246,6 +289,16 @@ export function VideoCard({
               }}
               className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
             />
+          )}
+
+          {/* Hover Video Preview — desktop only (md+), never mounts on mobile */}
+          {video.status === "ready" && (
+            <div className="hidden md:block absolute inset-0">
+              <VideoPreview
+                playlistUrl={videoApi.getPlaylistUrl(video.id)}
+                isActive={isHovered}
+              />
+            </div>
           )}
 
           {/* Overlay icon */}
@@ -369,7 +422,9 @@ export function VideoCard({
                 {extractingThumbs && extractedThumbs.length === 0 ? (
                   <div className="flex items-center justify-center p-8 bg-muted/50 rounded-lg border border-dashed">
                     <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                    <span className="ml-2 text-sm text-muted-foreground">Extracting frames...</span>
+                    <span className="ml-2 text-sm text-muted-foreground">
+                      Extracting frames...
+                    </span>
                   </div>
                 ) : extractedThumbs.length > 0 ? (
                   <div className="grid grid-cols-5 gap-2 mt-1">
@@ -381,16 +436,22 @@ export function VideoCard({
                           "relative aspect-video rounded cursor-pointer overflow-hidden border-2 transition-all",
                           selectedThumb === thumb
                             ? "border-primary shadow-sm"
-                            : "border-transparent hover:border-border/80"
+                            : "border-transparent hover:border-border/80",
                         )}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={thumb} alt={`Frame ${idx}`} className="w-full h-full object-cover" />
+                        <img
+                          src={thumb}
+                          alt={`Frame ${idx}`}
+                          className="w-full h-full object-cover"
+                        />
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-xs text-muted-foreground italic">Thumbnail extraction not available.</div>
+                  <div className="text-xs text-muted-foreground italic">
+                    Thumbnail extraction not available.
+                  </div>
                 )}
               </div>
             )}
@@ -409,7 +470,7 @@ export function VideoCard({
               <Select
                 value={editData.category}
                 onValueChange={(v) => {
-                  if (v) setEditData({ ...editData, category: v })
+                  if (v) setEditData({ ...editData, category: v });
                 }}
               >
                 <SelectTrigger id="category">
@@ -432,7 +493,7 @@ export function VideoCard({
                 value={editData.visibility}
                 onValueChange={(v) => {
                   if (v === "public" || v === "private") {
-                    setEditData({ ...editData, visibility: v })
+                    setEditData({ ...editData, visibility: v });
                   }
                 }}
               >

@@ -13,16 +13,9 @@ import {
   DropdownMenuTrigger,
   DropdownMenuGroup,
 } from "@/components/ui/dropdown-menu";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import SidebarNav from "./SidebarNav";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { GlobalSearch } from "@/components/GlobalSearch";
 
 function UserAvatar({
@@ -62,31 +55,9 @@ export default function AuthHeader() {
     <header className="sticky top-0 z-50 w-full bg-background/80 backdrop-blur-md border-b border-border/40">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl flex items-center justify-between h-16 gap-4">
         
-        {/* Left Side: Mobile Menu & Logo */}
-        <div className="flex items-center gap-3 md:gap-0 md:w-64">
-          <div className="md:hidden">
-            <Sheet>
-              <SheetTrigger className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-9 w-9")}>
-                <Menu className="h-5 w-5" />
-                <span className="sr-only">Toggle navigation menu</span>
-              </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-64 bg-background/95">
-                <SheetHeader className="p-4 text-left border-b border-border/40">
-                  <SheetTitle>Navigation</SheetTitle>
-                </SheetHeader>
-                <SidebarNav />
-              </SheetContent>
-            </Sheet>
-          </div>
-          
-          <Link href="/" className="text-[22px] font-black tracking-tighter flex items-center gap-2.5 group">
-            <div className="bg-primary text-primary-foreground w-8 h-8 rounded-xl flex items-center justify-center shadow-lg shadow-primary/25 transition-transform group-hover:scale-105 group-hover:-rotate-3">
-              <span className="text-base leading-none">K</span>
-            </div>
-            <span className="bg-gradient-to-r from-foreground via-foreground/90 to-muted-foreground bg-clip-text text-transparent hidden sm:inline-block">
-              VAULT
-            </span>
-          </Link>
+        {/* Left Side: Sidebar Trigger */}
+        <div className="flex items-center md:w-64">
+          <SidebarTrigger className="-ml-2 h-9 w-9" />
         </div>
 
         {/* Center: Global Search Placeholder */}

@@ -4,6 +4,7 @@ import SessionGuard from "./SessionGuard";
 import "./globals.css";
 import { Geist, Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
+import { GlobalPlayer } from "@/components/GlobalPlayer";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
@@ -39,6 +40,7 @@ export default function RootLayout({
       <body>
         <Providers>
           <SessionGuard />
+          <GlobalPlayer />
           {children}
         </Providers>
       </body>
