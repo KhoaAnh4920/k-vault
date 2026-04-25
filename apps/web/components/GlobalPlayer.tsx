@@ -30,7 +30,15 @@ export function GlobalPlayer() {
   const accessToken = session?.access_token as string | undefined;
 
   const playerStore = useVideoPlayer();
-  const { activeVideo, playlistUrl, autoplay, loop, ambient, placeholderNode, actions } = playerStore;
+  const {
+    activeVideo,
+    playlistUrl,
+    autoplay,
+    loop,
+    ambient,
+    placeholderNode,
+    actions,
+  } = playerStore;
 
   const playerRef = useRef<MediaPlayerInstance>(null);
   const tokenRef = useRef<string | undefined>(accessToken);
@@ -46,6 +54,83 @@ export function GlobalPlayer() {
   const [isPiP, setIsPiP] = useState(false);
 
   useEffect(() => {
+    if (!isWatchPage) return;
+
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      const player = playerRef.current;
+      if (!player) return;
+
+      // Guard 1: skip when user is typing in an interactive element
+      const target = e.target as HTMLElement;
+      const tag = target?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      // Guard 2: skip modifier combos (⌘K, ⌘B, Ctrl+*, Alt+*)
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      switch (e.key) {
+        case " ":
+        case "k":
+          e.preventDefault();
+          player.paused ? player.play() : player.pause();
+          break;
+
+        case "f":
+          e.preventDefault();
+          // Vidstack docs: both enterFullscreen() and exitFullscreen() are player
+          // instance methods — the correct cross-browser API, not document.exitFullscreen().
+          if (player.state.fullscreen) {
+            await player.exitFullscreen();
+          } else {
+            await player.enterFullscreen();
+          }
+          break;
+
+        case "m":
+          e.preventDefault();
+          player.muted = !player.muted;
+          break;
+
+        case "ArrowLeft":
+          e.preventDefault();
+          player.currentTime = Math.max(0, player.currentTime - 10);
+          break;
+
+        case "ArrowRight":
+          e.preventDefault();
+          player.currentTime = Math.min(
+            player.state.duration ?? Infinity,
+            player.currentTime + 10,
+          );
+          break;
+
+        case "ArrowUp":
+          e.preventDefault();
+          player.volume = Math.min(1, player.volume + 0.1);
+          break;
+
+        case "ArrowDown":
+          e.preventDefault();
+          player.volume = Math.max(0, player.volume - 0.1);
+          break;
+
+        default:
+          break;
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isWatchPage]);
+
+  useEffect(() => {
     if (!isWatchPage || !placeholderNode) return;
 
     const updatePos = () => {
@@ -59,7 +144,7 @@ export function GlobalPlayer() {
     };
 
     updatePos();
-    
+
     // Track resizing of the element itself
     const observer = new ResizeObserver(() => updatePos());
     observer.observe(placeholderNode);
@@ -71,19 +156,16 @@ export function GlobalPlayer() {
     };
   }, [isWatchPage, placeholderNode, activeVideo?.id]); // re-run if video changes
 
-  const handleProviderChange = useCallback(
-    (provider: any) => {
-      if (isHLSProvider(provider)) {
-        provider.config = {
-          xhrSetup: (xhr: XMLHttpRequest) => {
-            const token = tokenRef.current;
-            if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-          },
-        };
-      }
-    },
-    []
-  );
+  const handleProviderChange = useCallback((provider: any) => {
+    if (isHLSProvider(provider)) {
+      provider.config = {
+        xhrSetup: (xhr: XMLHttpRequest) => {
+          const token = tokenRef.current;
+          if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        },
+      };
+    }
+  }, []);
 
   if (!activeVideo || !playlistUrl) return null;
 
@@ -96,7 +178,7 @@ export function GlobalPlayer() {
         isWatchPage
           ? "absolute rounded-xl"
           : "fixed bottom-6 right-6 w-80 aspect-video rounded-lg",
-        isHiddenPip && "opacity-0 pointer-events-none translate-y-full"
+        isHiddenPip && "opacity-0 pointer-events-none translate-y-full",
       )}
       style={
         isWatchPage && pos.width > 0
@@ -111,14 +193,14 @@ export function GlobalPlayer() {
     >
       {isWatchPage && (
         <div className="absolute top-4 right-4 z-[70] opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300">
-           <PlayerSettingsMenu
-             autoplay={autoplay}
-             setAutoplay={actions.setAutoplay}
-             loop={loop}
-             setLoop={actions.setLoop}
-             ambient={ambient}
-             setAmbient={actions.setAmbient}
-           />
+          <PlayerSettingsMenu
+            autoplay={autoplay}
+            setAutoplay={actions.setAutoplay}
+            loop={loop}
+            setLoop={actions.setLoop}
+            ambient={ambient}
+            setAmbient={actions.setAmbient}
+          />
         </div>
       )}
 
@@ -157,7 +239,7 @@ export function GlobalPlayer() {
         onProviderChange={handleProviderChange}
         onPictureInPictureChange={(active) => {
           setIsPiP(active);
-          
+
           if (!active && !isWatchPage) {
             // User exited PIP while NOT on the watch page.
             // Check if they clicked 'Back to tab' (video is still playing) vs 'X' (video paused).
@@ -170,15 +252,25 @@ export function GlobalPlayer() {
         <MediaProvider />
         {isWatchPage && (
           <>
-            <Gesture className="vds-gesture" event="pointerup" action="toggle:paused" />
-            <Gesture className="vds-gesture" event="pointerup" action="toggle:controls" />
-            <Gesture className="vds-gesture" event="dblpointerup" action="seek:-10" />
+            <Gesture
+              className="vds-gesture"
+              event="pointerup"
+              action="toggle:paused"
+            />
+            <Gesture
+              className="vds-gesture"
+              event="pointerup"
+              action="toggle:controls"
+            />
+            <Gesture
+              className="vds-gesture"
+              event="dblpointerup"
+              action="seek:-10"
+            />
             <DefaultVideoLayout icons={defaultLayoutIcons} />
           </>
         )}
-        {!isWatchPage && (
-           <DefaultVideoLayout icons={defaultLayoutIcons} />
-        )}
+        {!isWatchPage && <DefaultVideoLayout icons={defaultLayoutIcons} />}
       </MediaPlayer>
     </div>
   );

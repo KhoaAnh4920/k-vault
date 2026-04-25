@@ -2,6 +2,7 @@ import "dotenv/config";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
+import * as http from "http";
 import * as readline from "readline";
 import { Worker, Job } from "bullmq";
 import { Pool } from "pg";
@@ -716,9 +717,69 @@ logStructured({
   storageType: process.env.STORAGE_TYPE ?? "DRIVE",
 });
 
+// ─── W-3: Lightweight Health Check Endpoint ────────────────────────────────
+//
+// Minimal native http server for PM2 / Docker liveness probes.
+// Uses Node.js built-in ‘http’ — zero external dependencies, ~0.3 MB overhead.
+// Reads the existing ‘isTranscoding’ flag directly; no BullMQ / Redis queries.
+// Port is configurable via WORKER_HEALTH_PORT (default: 3001).
+
+const HEALTH_PORT = parseInt(process.env.WORKER_HEALTH_PORT ?? "3002", 10);
+
+const healthServer = http.createServer((req, res) => {
+  if (req.method === "GET" && req.url === "/health") {
+    const mem = process.memoryUsage();
+    const toMB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    const toGB = (bytes: number) => `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+
+    const payload = {
+      status: "ok",
+      uptime: Math.round(process.uptime() * 10) / 10,
+      isTranscoding,
+      memoryUsage: {
+        rss:       toMB(mem.rss),
+        heapUsed:  toMB(mem.heapUsed),
+        heapTotal: toMB(mem.heapTotal),
+      },
+      system: {
+        cpuCores:    os.cpus().length,
+        totalMemory: toGB(os.totalmem()),
+        freeMemory:  toGB(os.freemem()),
+        loadAvg1m:   parseFloat(os.loadavg()[0]!.toFixed(2)),
+      },
+    };
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(payload));
+    return;
+  }
+
+  // All other paths — return 404 with no body
+  res.writeHead(404);
+  res.end();
+});
+
+// Safeguard: a busy port logs a warning but never crashes the worker.
+healthServer.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.warn(
+      `⚠  Health port ${HEALTH_PORT} is already in use — health endpoint disabled.`,
+    );
+  } else {
+    console.error("Health server error:", err.message);
+  }
+});
+
+healthServer.listen(HEALTH_PORT, () => {
+  console.log(
+    `🏥 Health endpoint listening on http://localhost:${HEALTH_PORT}/health`,
+  );
+});
+
 // Graceful shutdown
 const shutdown = async () => {
   console.log("\n🛑 Shutting down worker...");
+  healthServer.close(); // W-3: Stop accepting new health check connections
   await Promise.all(workers.map((w) => w.close()));
   await Promise.all(contexts.map((ctx) => ctx.pool.end()));
   process.exit(0);

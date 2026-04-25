@@ -1,39 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
-import { useInView } from "react-intersection-observer";
-import {
-  MediaPlayer,
-  MediaProvider,
-  isHLSProvider,
-  MediaPlayerInstance,
-  Gesture,
-} from "@vidstack/react";
-import {
-  defaultLayoutIcons,
-  DefaultVideoLayout,
-} from "@vidstack/react/player/layouts/default";
-import "@vidstack/react/player/styles/default/theme.css";
-import "@vidstack/react/player/styles/default/layouts/video.css";
-import { videoApi, type Video } from "@/lib/api";
-import { useVideoPlayer } from "@/lib/stores/usePlayerStore";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { videoApi, type Video } from "@/lib/api";
+import { useVideoPlayer } from "@/lib/stores/usePlayerStore";
+import { cn } from "@/lib/utils";
 import {
-  Loader2,
+  isHLSProvider,
+  MediaPlayer,
+  MediaPlayerInstance,
+} from "@vidstack/react";
+import "@vidstack/react/player/styles/default/layouts/video.css";
+import "@vidstack/react/player/styles/default/theme.css";
+import {
   AlertTriangle,
   ArrowLeft,
-  Share2,
-  Settings,
+  Clock,
   Copy,
   Link2,
   Link2Off,
-  Clock,
+  Loader2,
+  Share2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useInView } from "react-intersection-observer";
 import { toast } from "sonner";
 
 function ExpandableDescription({
@@ -380,7 +373,7 @@ export default function WatchPage() {
         try {
           const historyStr = localStorage.getItem("k-vault-history") || "[]";
           let history = JSON.parse(historyStr);
-          
+
           // Collect recent history IDs for related video sorting
           history.forEach((item: any) => recentHistoryIds.add(item.videoId));
           recentHistoryIds.add(v.id); // Add current video too
@@ -438,24 +431,27 @@ export default function WatchPage() {
   const { ref: loadMoreRef, inView } = useInView({ threshold: 0.1 });
 
   const fetchMoreRelated = useCallback(
-    async (
-      currentId: string,
-      currentDisplayedIds: string[],
-    ) => {
+    async (currentId: string, currentDisplayedIds: string[]) => {
       setFetchingMoreRelated(true);
       try {
         // Collect history IDs (optional for further exclusion)
         const historyStr = localStorage.getItem("k-vault-history") || "[]";
         let historyIds: string[] = [];
         try {
-           const historyObj = JSON.parse(historyStr);
-           historyIds = historyObj.map((h: any) => h.videoId);
+          const historyObj = JSON.parse(historyStr);
+          historyIds = historyObj.map((h: any) => h.videoId);
         } catch {}
 
         // Combine history and currently displayed to ensure we get 100% fresh videos
-        const combinedExclude = Array.from(new Set([...currentDisplayedIds, ...historyIds.slice(-20)]));
+        const combinedExclude = Array.from(
+          new Set([...currentDisplayedIds, ...historyIds.slice(-20)]),
+        );
 
-        const res = await videoApi.getRelated(currentId, 12, combinedExclude.slice(0, 50));
+        const res = await videoApi.getRelated(
+          currentId,
+          12,
+          combinedExclude.slice(0, 50),
+        );
         setRelatedVideos((prev) => [...prev, ...res.data]);
         setHasMoreRelated(res.hasMore);
       } catch (err) {
@@ -477,7 +473,10 @@ export default function WatchPage() {
     ) {
       const next = relatedPage + 1;
       setRelatedPage(next);
-      void fetchMoreRelated(video.id, relatedVideos.map(v => v.id));
+      void fetchMoreRelated(
+        video.id,
+        relatedVideos.map((v) => v.id),
+      );
     }
   }, [
     inView,
@@ -526,8 +525,8 @@ export default function WatchPage() {
           if (!showUpNext) setShowUpNext(true);
           setCountdown(Math.max(0, rem));
           if (rem <= 0 && relatedVideos[0]) {
-             // Auto navigate when reaching exactly 0
-             router.push(`/watch/${relatedVideos[0].id}`);
+            // Auto navigate when reaching exactly 0
+            router.push(`/watch/${relatedVideos[0].id}`);
           }
         } else {
           if (showUpNext) setShowUpNext(false);
@@ -612,7 +611,6 @@ export default function WatchPage() {
               )}
 
               <div className="rounded-xl overflow-hidden shadow-2xl shadow-black/80 bg-transparent relative z-10 border border-border/10">
-
                 {sessionStatus === "loading" || !accessToken ? (
                   <div className="aspect-video flex items-center justify-center">
                     <Loader2 className="w-10 h-10 animate-spin text-primary" />
@@ -621,10 +619,12 @@ export default function WatchPage() {
                   <div
                     id="video-placeholder"
                     ref={(node) => {
-                       if (node) {
-                         // Small delay ensures DOM is settled before registering, avoiding race conditions
-                         requestAnimationFrame(() => actions.setPlaceholderNode(node));
-                       }
+                      if (node) {
+                        // Small delay ensures DOM is settled before registering, avoiding race conditions
+                        requestAnimationFrame(() =>
+                          actions.setPlaceholderNode(node),
+                        );
+                      }
                     }}
                     className="aspect-video w-full rounded-xl bg-transparent"
                   />
@@ -656,9 +656,12 @@ export default function WatchPage() {
                 <>
                   <Clock className="w-10 h-10 text-amber-400" />
                   <div>
-                    <p className="m-0 font-semibold text-foreground">Queued for processing</p>
+                    <p className="m-0 font-semibold text-foreground">
+                      Queued for processing
+                    </p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      This video is waiting in the transcode queue. It will start processing soon.
+                      This video is waiting in the transcode queue. It will
+                      start processing soon.
                     </p>
                   </div>
                 </>
@@ -666,7 +669,9 @@ export default function WatchPage() {
                 <>
                   <Loader2 className="w-10 h-10 animate-spin text-primary" />
                   <div>
-                    <p className="m-0 font-semibold text-foreground">Transcoding in progress...</p>
+                    <p className="m-0 font-semibold text-foreground">
+                      Transcoding in progress...
+                    </p>
                     <p className="mt-1 text-sm text-muted-foreground">
                       This may take a few minutes.
                     </p>
@@ -675,7 +680,9 @@ export default function WatchPage() {
               ) : (
                 <>
                   <AlertTriangle className="w-12 h-12 text-destructive mb-2" />
-                  <p className="m-0 text-muted-foreground">Transcoding failed</p>
+                  <p className="m-0 text-muted-foreground">
+                    Transcoding failed
+                  </p>
                 </>
               )}
             </div>
@@ -693,47 +700,58 @@ export default function WatchPage() {
 
             <div className="flex items-center gap-2">
               {/* Owner share-link panel (US3) */}
-              {isOwner && (video.visibility === "private" || video.visibility === "unlisted") && (
-                <>
-                  {shareToken ? (
-                    <>
+              {isOwner &&
+                (video.visibility === "private" ||
+                  video.visibility === "unlisted") && (
+                  <>
+                    {shareToken ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-full text-xs h-9 gap-1.5"
+                          onClick={async () => {
+                            const url = `${window.location.origin}/watch/share/${shareToken}`;
+                            await navigator.clipboard.writeText(url);
+                            toast.success("Link copied!");
+                          }}
+                        >
+                          <Copy className="w-3.5 h-3.5" /> Copy Link
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="rounded-full text-xs h-9 gap-1.5 text-destructive hover:text-destructive"
+                          onClick={handleRevokeShareLink}
+                        >
+                          <Link2Off className="w-3.5 h-3.5" /> Revoke
+                        </Button>
+                      </>
+                    ) : (
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant="secondary"
                         className="rounded-full text-xs h-9 gap-1.5"
-                        onClick={async () => {
-                          const url = `${window.location.origin}/watch/share/${shareToken}`;
-                          await navigator.clipboard.writeText(url);
-                          toast.success("Link copied!");
-                        }}
+                        onClick={handleGenerateShareLink}
+                        disabled={generatingShare}
                       >
-                        <Copy className="w-3.5 h-3.5" /> Copy Link
+                        {generatingShare ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Link2 className="w-3.5 h-3.5" />
+                        )}
+                        Get Share Link
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="rounded-full text-xs h-9 gap-1.5 text-destructive hover:text-destructive"
-                        onClick={handleRevokeShareLink}
-                      >
-                        <Link2Off className="w-3.5 h-3.5" /> Revoke
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="rounded-full text-xs h-9 gap-1.5"
-                      onClick={handleGenerateShareLink}
-                      disabled={generatingShare}
-                    >
-                      {generatingShare ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
-                      Get Share Link
-                    </Button>
-                  )}
-                </>
-              )}
+                    )}
+                  </>
+                )}
 
-              <Button onClick={handleShare} variant="secondary" className="rounded-full shadow-sm text-sm font-semibold h-9" size="sm">
+              <Button
+                onClick={handleShare}
+                variant="secondary"
+                className="rounded-full shadow-sm text-sm font-semibold h-9"
+                size="sm"
+              >
                 <Share2 className="w-4 h-4 mr-2" /> Share
               </Button>
             </div>
