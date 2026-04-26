@@ -128,6 +128,16 @@ export interface PaginatedVideos {
   total: number;
 }
 
+export interface WatchHistoryEntry {
+  id: string;
+  videoId: string;
+  progress: number;
+  duration: number;
+  lastWatchedAt: string;
+  video: Video;
+}
+
+
 export const videoApi = {
   list: (params?: {
     category?: string;
@@ -239,6 +249,37 @@ export const videoApi = {
       }
     });
   },
+
+  // ── Watch History / Resume Playback ────────────────────────────────────────
+
+  /**
+   * UPSERT progress for a video.
+   * Called on a 30-second debounce from GlobalPlayer and on video unmount.
+   */
+  syncProgress: (videoId: string, progress: number, duration: number) =>
+    api
+      .put(`/watch-history/${videoId}`, { progress, duration })
+      .then(() => undefined as void),
+
+  /**
+   * Fetch the "Continue Watching" list for the current user.
+   * Excludes completed (≥95%) and non-ready videos (filtered by backend).
+   */
+  getWatchHistory: (limit = 20) =>
+    api
+      .get<WatchHistoryEntry[]>("/watch-history", { params: { limit } })
+      .then((r) => r.data),
+
+  /**
+   * Get saved progress for a single video.
+   * Returns null if no history exists (fresh play — do not seek).
+   */
+  getVideoProgress: (videoId: string) =>
+    api
+      .get<{ progress: number; duration: number } | null>(
+        `/watch-history/${videoId}`,
+      )
+      .then((r) => r.data),
 };
 
 export default api;

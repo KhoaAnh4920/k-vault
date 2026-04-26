@@ -3,12 +3,14 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { validate } from './config/env.validation';
+import { RedisProvider } from './config/redis.provider';
 import { AuthModule } from './auth/auth.module';
 import { StorageModule } from './storage/storage.module';
 import { VideoModule } from './video/video.module';
 import { StreamModule } from './stream/stream.module';
 import { Video } from './video/entities/video.entity';
 import { VideoChunk } from './video/entities/video-chunk.entity';
+import { WatchHistory } from './video/entities/watch-history.entity';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 
 @Module({
@@ -31,7 +33,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
             config.get<string>('NODE_ENV') === 'production' && !isLocal
               ? { rejectUnauthorized: false }
               : false,
-          entities: [Video, VideoChunk],
+          entities: [Video, VideoChunk, WatchHistory],
           synchronize: true,
           logging: config.get<string>('NODE_ENV') === 'development',
         };
@@ -63,5 +65,6 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
     VideoModule,
     StreamModule,
   ],
+  providers: [RedisProvider],
 })
 export class AppModule {}

@@ -21,6 +21,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { CategoryPills } from "@/components/CategoryPills";
 import { VideoCard } from "@/components/VideoCard";
+import { ContinueWatchingRow } from "@/components/ContinueWatchingRow";
 
 function SkeletonCard() {
   return (
@@ -303,6 +304,9 @@ export default function HomePage() {
               : `${totalCount} video${totalCount !== 1 ? "s" : ""} available.${hasProcessing ? " Transcoding in progress." : ""}`}
           </p>
         </div>
+
+        {/* Continue Watching — only shown to authenticated users with history */}
+        <ContinueWatchingRow />
 
         {/* Category filter chips */}
         <CategoryPills 

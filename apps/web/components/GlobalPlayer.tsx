@@ -16,6 +16,7 @@ import {
 } from "@vidstack/react/player/layouts/default";
 import { videoApi } from "@/lib/api";
 import { useSession } from "next-auth/react";
+import { getSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { X, Maximize2 } from "lucide-react";
 import Link from "next/link";
@@ -52,9 +53,39 @@ export function GlobalPlayer() {
   // applies fresh for every navigation.
   const hasUnmutedRef = useRef(false);
 
+  // ── Progress sync refs (debounced, N100-friendly) ───────────────────────
+  // We use refs (not state) so writes never trigger re-renders.
+  const lastSyncTimeRef = useRef<number>(0);   // ms timestamp of last API call
+  const lastProgressRef = useRef<number>(0);   // currentTime at last tick
+  const lastDurationRef = useRef<number>(0);   // duration at last tick
+
   useEffect(() => {
     tokenRef.current = accessToken;
   }, [accessToken]);
+
+  // ── Keepalive flush: save final progress when video changes or unmounts ──
+  // fetch() with keepalive: true fires even during page unload, and — unlike
+  // sendBeacon — allows setting the Authorization header.
+  useEffect(() => {
+    const videoId = activeVideo?.id;
+    return () => {
+      if (!videoId || !accessToken || lastProgressRef.current <= 0) return;
+      const url = `${process.env.NEXT_PUBLIC_API_URL}/watch-history/${videoId}`;
+      fetch(url, {
+        method: "PUT",
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          progress: lastProgressRef.current,
+          duration: lastDurationRef.current,
+        }),
+      }).catch(() => {}); // fire-and-forget
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeVideo?.id]);
 
   // ── Sync playerRef → global ref so the watch page can access it ────────
   // The watch page needs to access the player for duration and seeking.
@@ -294,6 +325,29 @@ export function GlobalPlayer() {
           // This restores the Up Next countdown + auto-advance that was broken
           // when <MediaPlayer> was hoisted out of the watch page.
           onTimeUpdateCallback?.(detail);
+
+          // ── Debounced progress sync (every 30s) ───────────────────────────
+          // Track the latest values in refs so the keepalive flush always
+          // has access to them without stale closure issues.
+          lastProgressRef.current = detail.currentTime;
+          lastDurationRef.current = playerRef.current?.state.duration ?? 0;
+
+          const now = Date.now();
+          if (
+            now - lastSyncTimeRef.current > 30_000 &&
+            activeVideo &&
+            accessToken &&
+            detail.currentTime > 0
+          ) {
+            lastSyncTimeRef.current = now;
+            videoApi
+              .syncProgress(
+                activeVideo.id,
+                detail.currentTime,
+                lastDurationRef.current,
+              )
+              .catch(() => {}); // fire-and-forget
+          }
         }}
         onEnded={() => {
           // Forward to the watch page's loop handler via the store callback slot.

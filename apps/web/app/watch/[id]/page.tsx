@@ -367,33 +367,9 @@ export default function WatchPage() {
         // Sync share token from fetched video (can't do this at useState init time)
         if (v.shareToken) setShareToken(v.shareToken);
 
-        // Update watch history immediately so current video is marked as watched
-        let recentHistoryIds = new Set<string>();
-        try {
-          const historyStr = localStorage.getItem("k-vault-history") || "[]";
-          let history = JSON.parse(historyStr);
-
-          // Collect recent history IDs for related video sorting
-          history.forEach((item: any) => recentHistoryIds.add(item.videoId));
-          recentHistoryIds.add(v.id); // Add current video too
-
-          // Move current video to the end (most recent)
-          history = history.filter((h: any) => h.videoId !== v.id);
-          history.push({
-            videoId: v.id,
-            progress: 0,
-            timestamp: Date.now(),
-          });
-          if (history.length > 100) history.shift();
-          localStorage.setItem("k-vault-history", JSON.stringify(history));
-        } catch {
-          // Ignore
-        }
-
-        // Fetch related videos natively from the smart backend API
-        const arrayHistoryIds = Array.from(recentHistoryIds).slice(0, 20);
+        // Fetch related videos — no more localStorage history needed
         videoApi
-          .getRelated(v.id, 12, arrayHistoryIds)
+          .getRelated(v.id, 12, [v.id])
           .then((res) => {
             setRelatedVideos(res.data);
             setHasMoreRelated(res.hasMore);
@@ -401,27 +377,20 @@ export default function WatchPage() {
           .catch(console.error)
           .finally(() => setLoadingRelated(false));
 
-        // Restore start time if progress is saved
-        try {
-          const history = JSON.parse(
-            localStorage.getItem("k-vault-history") || "[]",
-          );
-          const found = history.find(
-            (h: { videoId: string; progress: number; timestamp: number }) =>
-              h.videoId === v.id,
-          );
-          // If video isn't finished (leave 5 seconds margin), resume from last position
-          if (
-            found &&
-            found.progress > 0 &&
-            v.durationSeconds &&
-            found.progress < v.durationSeconds - 5
-          ) {
-            setStartTime(found.progress);
-          }
-        } catch {
-          // Ignore
-        }
+        // Restore start time from backend watch history (auto-resume)
+        videoApi
+          .getVideoProgress(v.id)
+          .then((entry) => {
+            if (
+              entry &&
+              entry.progress > 0 &&
+              v.durationSeconds &&
+              entry.progress < v.durationSeconds - 5
+            ) {
+              setStartTime(entry.progress);
+            }
+          })
+          .catch(() => {}); // silent — first-time plays are fine without a resume point
       })
       .catch(() => router.push("/"))
       .finally(() => setLoading(false));
@@ -433,23 +402,10 @@ export default function WatchPage() {
     async (currentId: string, currentDisplayedIds: string[]) => {
       setFetchingMoreRelated(true);
       try {
-        // Collect history IDs (optional for further exclusion)
-        const historyStr = localStorage.getItem("k-vault-history") || "[]";
-        let historyIds: string[] = [];
-        try {
-          const historyObj = JSON.parse(historyStr);
-          historyIds = historyObj.map((h: any) => h.videoId);
-        } catch {}
-
-        // Combine history and currently displayed to ensure we get 100% fresh videos
-        const combinedExclude = Array.from(
-          new Set([...currentDisplayedIds, ...historyIds.slice(-20)]),
-        );
-
         const res = await videoApi.getRelated(
           currentId,
           12,
-          combinedExclude.slice(0, 50),
+          currentDisplayedIds.slice(0, 50),
         );
         setRelatedVideos((prev) => [...prev, ...res.data]);
         setHasMoreRelated(res.hasMore);
@@ -510,13 +466,11 @@ export default function WatchPage() {
     [], // no dependency on accessToken — reads from tokenRef
   );
 
-  // Track playback time safely (throttled locally, saved globally)
-  const lastSaveRef = useRef<number>(0);
-
   const handleTimeUpdate = useCallback(
     (detail: { currentTime: number }) => {
       if (!video) return;
 
+      // ── Up Next overlay logic ────────────────────────────────────────
       const dur = globalPlayerRef.current?.state.duration || 0;
       if (dur > 0) {
         const rem = Math.ceil(dur - detail.currentTime);
@@ -524,37 +478,13 @@ export default function WatchPage() {
           if (!showUpNext) setShowUpNext(true);
           setCountdown(Math.max(0, rem));
           if (rem <= 0 && relatedVideos[0]) {
-            // Auto navigate when reaching exactly 0
             router.push(`/watch/${relatedVideos[0].id}`);
           }
         } else {
           if (showUpNext) setShowUpNext(false);
         }
       }
-
-      const now = Date.now();
-      if (now - lastSaveRef.current > 5000) {
-        lastSaveRef.current = now;
-        try {
-          const historyStr = localStorage.getItem("k-vault-history") || "[]";
-          let history = JSON.parse(historyStr);
-          history = history.filter((h: any) => h.videoId !== video.id);
-
-          // Save current progress
-          history.push({
-            videoId: video.id,
-            progress: detail.currentTime,
-            timestamp: now,
-          });
-
-          // Keep only last 100 watched videos
-          if (history.length > 100) history.shift();
-
-          localStorage.setItem("k-vault-history", JSON.stringify(history));
-        } catch {
-          // Ignored
-        }
-      }
+      // Note: progress sync (debounced, 30s) is handled by GlobalPlayer.tsx
     },
     [video, autoplay, loop, relatedVideos, showUpNext, router],
   );

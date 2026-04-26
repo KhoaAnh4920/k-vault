@@ -1,38 +1,38 @@
 import {
   Injectable,
+  Inject,
   Logger,
   OnModuleInit,
-  OnModuleDestroy,
 } from '@nestjs/common';
 import { OnEvent, EventEmitter2 } from '@nestjs/event-emitter';
 import { VideoCommandService } from './video.command.service';
-import Redis from 'ioredis';
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../config/redis.provider';
 
 @Injectable()
-export class VideoEventListener implements OnModuleInit, OnModuleDestroy {
+export class VideoEventListener implements OnModuleInit {
   private readonly logger = new Logger(VideoEventListener.name);
-  private subscriber: Redis;
 
   constructor(
     private readonly commandService: VideoCommandService,
     private readonly eventEmitter: EventEmitter2,
+    @Inject(REDIS_CLIENT)
+    private readonly redis: Redis,
   ) {}
 
   onModuleInit() {
-    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-    this.subscriber = new Redis(redisUrl, {
-      tls: redisUrl.startsWith('rediss://') ? {} : undefined,
-    });
-
-    this.subscriber.subscribe('video.status_changed', (err, count) => {
+    // Subscribe to the Redis Pub/Sub channel for cross-process status change events
+    // (worker → backend). We need a dedicated subscriber connection for this —
+    // a subscribed client cannot be used for regular commands.
+    this.redis.duplicate().subscribe('video.status_changed', (err, count) => {
       if (err) {
         this.logger.error('Failed to subscribe: ' + err.message);
       } else {
-        this.logger.log(`Subscribed to Redis channel video.status_changed`);
+        this.logger.log(`Subscribed to Redis channel video.status_changed (${count} channels)`);
       }
     });
 
-    this.subscriber.on('message', (channel, message) => {
+    this.redis.duplicate().on('message', (channel, message) => {
       if (channel === 'video.status_changed') {
         try {
           const payload = JSON.parse(message);
@@ -42,10 +42,6 @@ export class VideoEventListener implements OnModuleInit, OnModuleDestroy {
         }
       }
     });
-  }
-
-  onModuleDestroy() {
-    this.subscriber?.disconnect();
   }
 
   @OnEvent('video.viewed', { async: true })
@@ -58,3 +54,4 @@ export class VideoEventListener implements OnModuleInit, OnModuleDestroy {
     }
   }
 }
+

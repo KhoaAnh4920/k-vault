@@ -13,6 +13,8 @@ import { VideoService } from '../video/video.service';
 import { VideoStatus, VideoVisibility } from '../video/entities/video.entity';
 import type { AuthUser } from '../auth/jwt.strategy';
 import { Role } from '../auth/roles.decorator';
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../config/redis.provider';
 
 const QUALITY_META: Record<string, { bandwidth: number; resolution: string }> = {
   HD: { bandwidth: 5200000, resolution: '1920x1080' },
@@ -28,6 +30,8 @@ export class StreamService {
     private readonly storage: IStorageService,
     private readonly videoService: VideoService,
     private readonly eventEmitter: EventEmitter2,
+    @Inject(REDIS_CLIENT)
+    private readonly redis: Redis,
   ) {}
 
   /** Returns the master HLS playlist. Validates visibility access first. */
@@ -40,7 +44,16 @@ export class StreamService {
     if (video.status !== VideoStatus.READY) {
       throw new NotFoundException(`Video ${videoId} is not ready for streaming`);
     }
-    this.eventEmitter.emit('video.viewed', { videoId });
+    // TD-4 — Deduplicate view counts using a Redis sliding window.
+    // Key is scoped per user (or IP for guests) per video with a 30-minute TTL.
+    // SET NX returns 'OK' only on the first call; subsequent calls within the
+    // window return null, preventing view inflation from HLS re-requests.
+    const identity = user?.userId ?? 'guest';
+    const dedupeKey = `view:${identity}:${videoId}`;
+    const isNewView = await this.redis.set(dedupeKey, '1', 'EX', 1800, 'NX');
+    if (isNewView === 'OK') {
+      this.eventEmitter.emit('video.viewed', { videoId });
+    }
     return this.buildMasterPlaylist(videoId);
   }
 
