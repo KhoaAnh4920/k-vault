@@ -5,6 +5,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { Video } from './video.entity';
 
 @Entity('video_chunks')
 @Index(['videoId', 'sequence'])
@@ -15,8 +16,8 @@ export class VideoChunk {
   @Column({ name: 'video_id' })
   videoId: string;
 
-  @ManyToOne('Video', 'chunks', { onDelete: 'CASCADE' })
-  video: unknown;
+  @ManyToOne(() => Video, (video) => video.chunks, { onDelete: 'CASCADE' })
+  video: Video;
 
   /** e.g. "segment000.ts" */
   @Column({ type: 'varchar', length: 255 })

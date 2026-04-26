@@ -276,8 +276,6 @@ function AmbientBackground({
   );
 }
 
-// Removed PlayerSettingsProps and PlayerSettingsMenu since it's hosted in GlobalPlayer.
-
 export default function WatchPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();

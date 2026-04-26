@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { VideoChunk } from './video-chunk.entity';
 
 export enum VideoStatus {
   /** Job is queued but another job is currently being processed (BR3). */
@@ -83,8 +84,8 @@ export class Video {
   @Column({ type: 'varchar', length: 64, nullable: true, name: 'share_token' })
   shareToken: string | null;
 
-  @OneToMany('VideoChunk', 'video', { cascade: false })
-  chunks: unknown[];
+  @OneToMany(() => VideoChunk, (chunk) => chunk.video, { cascade: false })
+  chunks: VideoChunk[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
